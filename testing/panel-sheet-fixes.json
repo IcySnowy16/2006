@@ -1,0 +1,178 @@
+[
+ {
+  "id": "A5",
+  "fix": "'Sign out' is on Profile (round avatar), not a menu."
+ },
+ {
+  "id": "R1",
+  "fix": "Use an own BOTH account; the demo Dana is read-only on the panel."
+ },
+ {
+  "id": "G1",
+  "fix": "Preset label on screen is 'Shared ride to the gate (3 seats)'."
+ },
+ {
+  "id": "G2",
+  "fix": "Use an own $20 rider instead of demo Priya; button is Choose this ride."
+ },
+ {
+  "id": "G4",
+  "fix": "Sam ($2.50) cannot ask for a $3.00 solo seat: use a $20 rider or Sam as second rider on a sharing journey; the booking page says 'Cancelled', 'declined' is in the bell."
+ },
+ {
+  "id": "T1",
+  "fix": "replay-gps defaults to demo.driver (server/scripts/replay-gps.ts:11): add --email/--password (and --journey) of your own driver."
+ },
+ {
+  "id": "W2",
+  "fix": "The low-balance banner is on Wallet and Request a hop, not Home."
+ },
+ {
+  "id": "W6",
+  "fix": "'Top up $1.00' is on the /locked page ('See what you owe'), not on Wallet; do not top up Lee on a shared panel."
+ },
+ {
+  "id": "N2",
+  "fix": "Tab Trips, page title My trips; label reads Thanks For Rating (CSS capitalize)."
+ },
+ {
+  "id": "C-001",
+  "fix": "Labels: Full name, NTU e-mail, Mobile number, 'I will use Campus Hop as' (Passenger: I want rides / Driver: I give rides / Both), Create account, Sign in. Drop the green '✓ Valid NTU domain' line (not in draft)."
+ },
+ {
+  "id": "C-002",
+  "fix": "Buttons 'Create account' and 'Sign in'; page title 'Create your account'."
+ },
+ {
+  "id": "C-011",
+  "fix": "Chip 'Live' (later 'Open'); confirm button 'Yes, cancel it' in 'Cancel this journey?'."
+ },
+ {
+  "id": "C-012",
+  "fix": "Set CAMPUS_BOUNDARY in .env before the demo: without it the geofence is OFF by design (server/src/config/campusBoundary.ts)."
+ },
+ {
+  "id": "C-013",
+  "fix": "'Stat Limit: 1/2' is not on screen in the draft; check only the third go-live refusal and whether Home hints at it."
+ },
+ {
+  "id": "C-014",
+  "fix": "Page 'Drivers going your way'; button 'Choose this ride'; label 'Fare'; walk is its own 'Walk 60 m' row; no '1 candidate match' count, no detour or '$2.00 if 2nd rider joins' line."
+ },
+ {
+  "id": "C-018",
+  "fix": "'Accept' not 'Accept Booking'; no 'Open Hop Request'/'Pending Booking Request' headings (cards titled with the first name)."
+ },
+ {
+  "id": "C-019",
+  "fix": "The block is at Find a ride on the Request page, before any match is shown."
+ },
+ {
+  "id": "C-023",
+  "fix": "Dialog 'Cancel this booking?', button 'Yes, cancel'."
+ },
+ {
+  "id": "C-024",
+  "fix": "In the draft Cancel booking disappears when the trip starts; steps 1-2 cannot be done."
+ },
+ {
+  "id": "C-022",
+  "fix": "'Accept Booking' -> 'Accept'."
+ },
+ {
+  "id": "C-025",
+  "fix": "Card label 'Fare', not 'Current Fare'."
+ },
+ {
+  "id": "C-027",
+  "fix": "'Picked up' / 'Dropped off'; B can be set to $2.50 by top-up $5 then withdraw $2.50 as driver."
+ },
+ {
+  "id": "C-032",
+  "fix": "'TRIP IN PROGRESS' -> 'Trip in progress'; after re-allowing location use a fresh browser window so the emulated fix is not stale."
+ },
+ {
+  "id": "C-033",
+  "fix": "'Route navigation' -> 'Live position'; 'Picked up' / 'Dropped off'."
+ },
+ {
+  "id": "C-034",
+  "fix": "'Report No-Show (Wait Time: 00:00)' -> 'No-show' (no on-screen counter)."
+ },
+ {
+  "id": "C-035",
+  "fix": "'Yes, cancel'; Cancel booking is hidden once the trip starts."
+ },
+ {
+  "id": "C-041",
+  "fix": "Labels show as 'Thanks For Rating' / 'Thanks, Rated' (CSS capitalize)."
+ },
+ {
+  "id": "C-043",
+  "fix": "Drop or re-target: the 'Fix is in code: GeofenceService cancelUnstarted' note does not hold for 6f5050e; no unstarted-trip sweep exists."
+ },
+ {
+  "id": "C-050",
+  "fix": "Run the offline-reload step on a production build (npm run build + preview); the service worker is not active under npm run dev."
+ },
+ {
+  "id": "B-NA-001",
+  "fix": "GET /api/auth/me has no paidTripsToday; the count is dailyPaidTrips in the PUT /api/driver/profile answer."
+ },
+ {
+  "id": "B-NA-002",
+  "fix": "Hall A has only a bus stop in the fake catalogue."
+ },
+ {
+  "id": "B-NA-005",
+  "fix": "Use port 3000, not 3100."
+ },
+ {
+  "id": "B-NA-006",
+  "fix": "On a shared panel the 11-wrong-logins step locks out every other tester; run it last or cite organic 429s."
+ },
+ {
+  "id": "B-NA-008",
+  "fix": "Buttons are 'Go back' / 'Yes, cancel'."
+ },
+ {
+  "id": "B-NA-009",
+  "fix": "'Stat Limit' and the single-passenger header are not in this draft (per-rider cards)."
+ },
+ {
+  "id": "B-NA-011",
+  "fix": "Remove the unstarted-trip sweep timing for 6f5050e (Staging only); it is C-043."
+ },
+ {
+  "id": "B-NA-013",
+  "fix": "Use a time 30-40 min ahead and the weekday in Singapore time (schedule read in SGT)."
+ },
+ {
+  "id": "B-NB-002",
+  "fix": "'Yes, cancel'; Cancel is hidden from trip start in this draft."
+ },
+ {
+  "id": "B-NB-007",
+  "fix": "The draft has one role=status for the arrived banner; the chip is still silent."
+ },
+ {
+  "id": "B-NB-012",
+  "fix": "Re-measure: 'See its matches' is ~42 px; drop 'Enter your code' (not on /login)."
+ },
+ {
+  "id": "B-NB-013",
+  "fix": "'Find a Hop' -> 'Drivers going your way'."
+ },
+ {
+  "id": "B-NB-018",
+  "fix": "No Cancel button on the no-show page in this draft (hidden once the trip starts)."
+ },
+ {
+  "id": "B-NB-019",
+  "fix": "Keep button is 'Go back'; confirm 'Yes, cancel' / 'Yes, cancel it'."
+ },
+ {
+  "id": "B-NB-022",
+  "fix": "At 390 px in Chromium the option fits; the duplicated name and one-choice drop-down are the issue."
+ }
+]
