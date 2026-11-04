@@ -19,7 +19,7 @@
   input[type=text], input[type=date], input[type=search], textarea, select { width:100%; font: inherit; padding: 8px; border:1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   textarea { min-height: 52px; resize: vertical; }
   input[type=text], input[type=date], input[type=search], select { min-height: 44px; }
-  .case, h2 { scroll-margin-top: 64px; }
+  .case, h2 { scroll-margin-top: 112px; }
   .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
   @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
   .case { border-left: 4px solid var(--line); }
@@ -44,7 +44,9 @@
   .filters { display:grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin: 8px 0; }
   @media (max-width: 520px) { .filters { grid-template-columns: 1fr; } }
   a { color: var(--accent); }
-  nav a { display:inline-block; margin: 2px 10px 2px 0; color: var(--accent); }
+  nav a { display:inline-flex; align-items:center; min-height:44px; padding: 0 6px; margin: 0 4px 0 0; color: var(--accent); }
+  .steps li, .expect, .case p { overflow-wrap: anywhere; }
+  .bar a { display:inline-flex; align-items:center; min-height:44px; padding: 0 6px; }
   pre { white-space: pre-wrap; overflow-wrap:anywhere; background: var(--card); border:1px solid var(--line); border-radius: 8px; padding: 10px; font-size:.85rem; max-height: 320px; overflow:auto; }
 </style>
 </head>
