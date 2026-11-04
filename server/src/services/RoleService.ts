@@ -23,14 +23,19 @@ export class RoleService {
 
   /** True while the user is on a trip in either role. */
   async isMidTrip(userId: string): Promise<boolean> {
+    return (await this.tripRole(userId)) !== null;
+  }
+
+  /** The role the user's current trip is in: DRIVER with a journey live or in progress, PASSENGER with an open booking, else null. */
+  async tripRole(userId: string): Promise<ActiveRole | null> {
     const db = this.ctx.db();
     const asDriver = await db.journey.count({ where: { driverId: userId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
-    if (asDriver > 0) return true;
+    if (asDriver > 0) return 'DRIVER';
     const asPassenger = await db.booking.count({
       // PENDING counts too: the driver may accept it after the switch, and the user would then be riding and driving at once.
       where: { passengerId: userId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
     });
-    return asPassenger > 0;
+    return asPassenger > 0 ? 'PASSENGER' : null;
   }
 
   async setActiveRole(userId: string, role: ActiveRole, current: ActiveRole | null): Promise<{ token: string; me: Me }> {
@@ -38,7 +43,10 @@ export class RoleService {
     const row = await db.user.findUniqueOrThrow({ where: { id: userId } });
     const user = User.fromRecord(row as UserRecord);
     user.chooseActiveRole(role); // FORBIDDEN if the role is not held
-    if (current !== role && (await this.isMidTrip(userId))) {
+    // Refused only when the trip is in the OTHER role. Choosing the trip's own role is always allowed, even from no role at all:
+    // a live driver who added the passenger role and signed in again has activeRole null and must be able to pick DRIVER (X1 / NA-012).
+    const busyAs = current === role ? null : await this.tripRole(userId);
+    if (busyAs !== null && busyAs !== role) {
       throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'Finish or cancel your trip first, then switch role.' });
     }
     await db.user.update({ where: { id: userId }, data: { lastActiveRole: role } });

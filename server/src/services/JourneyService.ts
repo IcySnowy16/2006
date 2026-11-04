@@ -27,6 +27,7 @@ import { WalletService } from './WalletService';
 
 type GoLiveBody = z.output<typeof Hop.GoLiveBody>;
 
+const ALREADY_ACTIVE = 'You already have a journey that is live or in progress.';
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 /** A preset's departure time is used only if it is within this many minutes ahead. Otherwise "go live" means now. */
 const SCHEDULE_LOOKAHEAD_MIN = 120;
@@ -57,7 +58,7 @@ export class JourneyService {
     const now = this.ctx.clock.now();
     if (Driver.fromRecord(profile as DriverRecord).hasReachedDailyLimit(now)) throw new AppError('DAILY_TRIP_LIMIT_REACHED');
     const active = await db.journey.findFirst({ where: { driverId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
-    if (active) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You already have a journey that is live or in progress.' });
+    if (active) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: ALREADY_ACTIVE });
     const riding = await db.booking.findFirst({
       where: { passengerId: driverId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
     });
@@ -83,6 +84,10 @@ export class JourneyService {
       });
       await this.routes.store(tx, created.id, route);
       return created.id;
+    }).catch((err: unknown) => {
+      // A parallel "Go live" won the race: the partial unique index Journey_one_active_per_driver refused this insert (G5).
+      if ((err as { code?: string }).code === 'P2002') throw new AppError('ILLEGAL_STATE_TRANSITION', { message: ALREADY_ACTIVE });
+      throw err;
     });
 
     // Passengers who asked earlier and match this driver are told (FR 8.11, UC-7.AC.1). A failure here never undoes the go-live.
