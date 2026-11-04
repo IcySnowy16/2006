@@ -1,0 +1,16 @@
+{
+  "name": "@campus-hop/shared",
+  "private": true,
+  "version": "0.1.0",
+  "description": "API contract shared by the client and the server: zod schemas, enums, error codes, endpoint table (task K1)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

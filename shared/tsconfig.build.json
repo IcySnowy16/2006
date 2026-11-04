@@ -1,0 +1,7 @@
+{
+  "//": "Build: src only, no tests, emits dist with type declarations.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": false, "declaration": true, "outDir": "dist", "rootDir": "src" },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

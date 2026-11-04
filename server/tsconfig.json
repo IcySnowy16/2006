@@ -1,0 +1,21 @@
+{
+  "//": "Typecheck config: covers src AND test, never emits. Builds use tsconfig.build.json.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@campus-hop/shared": ["../shared/src/index.ts"] }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts", "../scripts/**/*.ts"]
+}

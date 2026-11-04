@@ -1,0 +1,33 @@
+# Task K14: everything the app needs besides Node, started with one command: `npm run db:up`.
+#   db      PostgreSQL 16 on localhost:5433 only   (user, password and database are all "campushop"; 5433, not 5432, so it
+#           cannot clash with another Postgres already on your machine. Change it with DB_PORT.)
+#   mailpit A fake inbox: SMTP on localhost:1025, the web page on http://localhost:8025
+# A second database, campushop_test, is created on first start for the automated tests (scripts/db-init.sql).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: campushop
+      POSTGRES_PASSWORD: campushop
+      POSTGRES_DB: campushop
+    ports:
+      - '127.0.0.1:${DB_PORT:-5433}:5432' # localhost only: the password is "campushop"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./scripts/db-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U campushop -d campushop']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+
+volumes:
+  dbdata:

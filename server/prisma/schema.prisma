@@ -1,0 +1,402 @@
+// Campus Hop database (task F5). One model per class of the design model (04_design_class_model.puml, SRS v2.2),
+// plus EmailVerification (task X1). Enums are the same words as the zod enums in shared/src/enums.ts.
+//
+// Rules that must hold even if a service has a bug are also written as CHECK constraints in the migration
+// (see prisma/migrations/*_constraints/migration.sql): seats between 0 and 3, wallet balance >= 0, held <= balance,
+// one rating per booking and rater, money columns never negative.
+//
+// DEFAULT answers used here (see shared/src/defaults.ts): SHARING cap 3 (SRS Q4); one DriverPreset class only,
+// no passenger presets (SRS Q16); no QuickMessage (contact is by phone, UC-15 alternative flow AC.2).
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+enum ActiveRole {
+  DRIVER
+  PASSENGER
+}
+
+enum AccountStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  LOCKED
+}
+
+enum Plan {
+  SOLO
+  SHARING
+}
+
+enum PickupType {
+  BUS_STOP
+  CARPARK
+}
+
+enum LocationZone {
+  HALLS
+  ACADEMIC
+  GATE
+}
+
+enum JourneyStatus {
+  LIVE
+  OPEN
+  FULL
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum CancelReason {
+  DRIVER
+  GEOFENCE
+  EXPIRED
+}
+
+enum HopRequestStatus {
+  OPEN
+  MATCHED
+  EXPIRED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum PickupStatus {
+  WAITING
+  APPROACHING
+  ARRIVED
+  PICKED_UP
+  DROPPED_OFF
+  NO_SHOW
+  UNPAID
+}
+
+enum PaymentStatus {
+  HELD
+  PAID
+  UNPAID
+}
+
+enum WalletTxType {
+  TOP_UP
+  HOLD
+  RELEASE
+  DEDUCT
+  CREDIT
+  PAYOUT
+}
+
+enum NotificationType {
+  BOOKING_REQUEST
+  BOOKING_CONFIRMED
+  BOOKING_DECLINED
+  JOURNEY_CANCELLED
+  JOURNEY_EXPIRED
+  GEOFENCE_CANCELLED
+  FARE_CHANGED
+  TRIP_STARTED
+  DRIVER_APPROACHING
+  DRIVER_ARRIVED
+  NO_SHOW
+  TRIP_COMPLETED
+  WALLET_CHECK
+  DEBT_RECORDED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  REQUEST_ACCEPTED
+}
+
+// ---------------------------------------------------------------- users
+model User {
+  id               String         @id @default(cuid())
+  name             String
+  ntuEmail         String         @unique
+  phone            String
+  passwordHash     String
+  isDriver         Boolean        @default(false)
+  isPassenger      Boolean        @default(true)
+  /// The role used last; null until the user has chosen one (FR 1.7).
+  lastActiveRole   ActiveRole?
+  sessionVersion   Int            @default(0)
+  accountStatus    AccountStatus  @default(PENDING_VERIFICATION)
+  /// FR 8.13
+  pushEnabled      Boolean        @default(true)
+  /// Counters kept in the same transaction that changes them (Passenger.completedRides, unpaidCount in the design model).
+  completedRides   Int            @default(0)
+  unpaidCount      Int            @default(0)
+  ratingSum        Int            @default(0)
+  ratingCount      Int            @default(0)
+  createdAt        DateTime       @default(now())
+
+  driverProfile    DriverProfile?
+  wallet           Wallet?
+  presets          DriverPreset[]
+  journeys         Journey[]
+  hopRequests      HopRequest[]
+  bookings         Booking[]
+  debts            Debt[]
+  notifications    Notification[]
+  verifications    EmailVerification[]
+  ratingsGiven     Rating[]       @relation("Rater")
+  ratingsReceived  Rating[]       @relation("Ratee")
+}
+
+/// Driver details and the daily trip counter (Driver in the design model).
+model DriverProfile {
+  userId            String    @id
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehiclePlate      String
+  vehicleModel      String
+  payNowId          String
+  dailyPaidTrips    Int       @default(0)
+  /// Singapore date of the last paid trip, so a missed midnight job can never block a driver (task D4).
+  lastPaidTripDate  String?
+}
+
+model EmailVerification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------- campus catalog (read-only data, seeded)
+model CampusLocation {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  zone         LocationZone
+  isExit       Boolean       @default(false)
+  latitude     Float
+  longitude    Float
+  pickupPoints PickupPoint[]
+  presetsUsing DriverPreset[]
+  requestsFrom HopRequest[]  @relation("RequestFrom")
+  requestsTo   HopRequest[]  @relation("RequestTo")
+}
+
+model PickupPoint {
+  id            String         @id @default(cuid())
+  locationId    String
+  location      CampusLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  type          PickupType
+  walkDistanceM Float
+  accessNote    String?
+  /// The data dictionary lists no coordinates, but matching measures the detour to this point, so it has them.
+  latitude      Float
+  longitude     Float
+  pickups       Booking[]      @relation("Pickup")
+  dropoffs      Booking[]      @relation("Dropoff")
+}
+
+/// Fare per rider by number of riders on the trip. Read-only data: no endpoint may edit it (NFR-6.1).
+model FareTier {
+  riders         Int @id
+  perRiderCents  Int
+}
+
+// ---------------------------------------------------------------- driver presets and journeys
+model DriverPreset {
+  id                   String         @id @default(cuid())
+  driverId             String
+  driver               User           @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  name                 String
+  exitGateId           String
+  exitGate             CampusLocation @relation(fields: [exitGateId], references: [id])
+  plan                 Plan
+  allowedPickupTypes   PickupType[]
+  detourToleranceMin   Int
+  scheduleDays         String[]
+  scheduleDepartAt     String?
+  /// FR 3.1.6: the driver confirmed the journeys happen regardless of passengers.
+  exemptionConfirmedAt DateTime
+  createdAt            DateTime       @default(now())
+  journeys             Journey[]
+
+  @@index([driverId])
+}
+
+model Journey {
+  id                String        @id @default(cuid())
+  driverId          String
+  driver            User          @relation(fields: [driverId], references: [id])
+  presetId          String?
+  preset            DriverPreset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
+  status            JourneyStatus @default(LIVE)
+  cancelReason      CancelReason?
+  plan              Plan
+  seatsAvailable    Int
+  departureTime     DateTime
+  /// Deadline stored on the row so a restart cannot lose it (task D4): a LIVE journey with no confirmed booking expires here.
+  liveExpiresAt     DateTime
+  startedAt         DateTime?
+  completedAt       DateTime?
+  /// Geofence state (UC-5.EX.1, SRS Q12): consecutive position readings outside the campus boundary.
+  outsideReadings   Int           @default(0)
+  createdAt         DateTime      @default(now())
+
+  route             Route?
+  bookings          Booking[]
+  locationUpdates   LocationUpdate[]
+
+  @@index([status, departureTime])
+  @@index([driverId, status])
+}
+
+/// The driver's route, calculated once at go-live (UC-6). `points` is the decoded polyline [[lat, lng], ...] that matching measures against.
+model Route {
+  journeyId   String  @id
+  journey     Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  polyline    String
+  points      Json
+  durationSec Int
+  distanceM   Int
+}
+
+model LocationUpdate {
+  id        String   @id @default(cuid())
+  journeyId String
+  journey   Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  accuracyM Float
+  timestamp DateTime
+
+  @@index([journeyId, timestamp])
+}
+
+// ---------------------------------------------------------------- requests and bookings
+model HopRequest {
+  id             String           @id @default(cuid())
+  passengerId    String
+  passenger      User             @relation(fields: [passengerId], references: [id])
+  fromLocationId String
+  from           CampusLocation   @relation("RequestFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String
+  to             CampusLocation   @relation("RequestTo", fields: [toLocationId], references: [id])
+  requestedTime  DateTime
+  status         HopRequestStatus @default(OPEN)
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  booking        Booking?
+
+  @@index([status, requestedTime])
+  @@index([passengerId])
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  journeyId        String
+  journey          Journey       @relation(fields: [journeyId], references: [id])
+  passengerId      String
+  passenger        User          @relation(fields: [passengerId], references: [id])
+  hopRequestId     String?       @unique
+  hopRequest       HopRequest?   @relation(fields: [hopRequestId], references: [id])
+  status           BookingStatus @default(PENDING)
+  pickupStatus     PickupStatus  @default(WAITING)
+  paymentStatus    PaymentStatus?
+  bookedOnTrust    Boolean       @default(false)
+  currentFareCents Int
+  finalFareCents   Int?
+  /// The amount currently held in the passenger's wallet for this booking (0 until the driver accepts).
+  heldCents        Int           @default(0)
+  pickupPointId    String
+  pickupPoint      PickupPoint   @relation("Pickup", fields: [pickupPointId], references: [id])
+  dropoffPointId   String
+  dropoffPoint     PickupPoint   @relation("Dropoff", fields: [dropoffPointId], references: [id])
+  confirmedAt      DateTime?
+  arrivedAt        DateTime?
+  createdAt        DateTime      @default(now())
+
+  ratings          Rating[]
+  transactions     WalletTransaction[]
+  debt             Debt?
+
+  @@index([journeyId, status])
+  @@index([passengerId, status])
+}
+
+// ---------------------------------------------------------------- wallet (simulated money, integer cents)
+model Wallet {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceCents Int      @default(0)
+  heldCents    Int      @default(0)
+  transactions WalletTransaction[]
+}
+
+/// Append-only: no update and no delete anywhere in the code (FR 10.10).
+model WalletTransaction {
+  id           String       @id @default(cuid())
+  walletUserId String
+  wallet       Wallet       @relation(fields: [walletUserId], references: [userId])
+  type         WalletTxType
+  amountCents  Int
+  bookingId    String?
+  booking      Booking?     @relation(fields: [bookingId], references: [id])
+  timestamp    DateTime     @default(now())
+
+  @@index([walletUserId, timestamp])
+}
+
+model Debt {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  bookingId   String    @unique
+  booking     Booking   @relation(fields: [bookingId], references: [id])
+  amountCents Int
+  createdAt   DateTime  @default(now())
+  clearedAt   DateTime?
+
+  @@index([userId, clearedAt])
+}
+
+// ---------------------------------------------------------------- ratings and notifications
+model Rating {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  raterId   String
+  rater     User     @relation("Rater", fields: [raterId], references: [id])
+  rateeId   String
+  ratee     User     @relation("Ratee", fields: [rateeId], references: [id])
+  stars     Int
+  comment   String?
+  timestamp DateTime @default(now())
+
+  @@unique([bookingId, raterId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  message   String
+  link      String?
+  isRead    Boolean          @default(false)
+  timestamp DateTime         @default(now())
+
+  @@index([userId, timestamp])
+}

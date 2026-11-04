@@ -1,0 +1,59 @@
+# Task K10 (and K11's audit): every pull request runs the same checks, in under five minutes.
+# Make "checks" a REQUIRED status check in the branch protection of main and dev (a repository admin does this; docs/SETUP.md, step GitHub).
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # The same Postgres as docker-compose.yml. The tests use their own database, created below.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: campushop
+          POSTGRES_PASSWORD: campushop
+          POSTGRES_DB: campushop_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U campushop -d campushop_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL_TEST: postgresql://campushop:campushop@localhost:5432/campushop_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install (exactly what package-lock.json says)
+        run: npm ci
+      - name: Generate the Prisma client
+        run: npm run db:generate
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Formatting
+        run: npm run format:check
+      - name: Dependency rule (entities, controllers, services, shared)
+        run: npm run depcheck
+      - name: Generated docs are up to date
+        run: npm run docs:check
+      - name: Tests (unit and database) with coverage thresholds
+        run: npm run test:coverage
+      - name: Dependency audit (high and critical only)
+        run: npm audit --omit=dev --audit-level=high

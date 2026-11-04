@@ -1,0 +1,40 @@
+{
+  "name": "@campus-hop/client",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The Campus Hop web app (React PWA, tasks F9, K8, K9 and all screens)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@campus-hop/shared": "*",
+    "@hookform/resolvers": "5.9.1",
+    "@tanstack/react-query": "5.104.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "7.89.0",
+    "react-router-dom": "7.18.4",
+    "socket.io-client": "4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "axe-core": "4.13.0",
+    "jsdom": "29.1.1",
+    "msw": "3.0.2",
+    "typescript": "^5.9.0",
+    "vite": "8.3.2",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "^5.0.4"
+  }
+}

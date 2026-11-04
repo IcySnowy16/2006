@@ -1,0 +1,31 @@
+# Task Q6: a release is a pull request from dev to main. When it is merged, CI has already passed on it (required check), and this
+# workflow builds the image to prove it still builds from a clean checkout and, if the repository has a deploy hook, calls it.
+# Tag the demoed commit with `git tag v1.0.0 && git push origin v1.0.0`; a tagged version is what gets demoed. To roll back, redeploy the
+# previous tag.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: The production image builds from a clean checkout
+        run: docker build -t campus-hop:${{ github.sha }} .
+      - name: Deploy (only when the host gave you a deploy hook URL)
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "No DEPLOY_HOOK_URL secret set: nothing deployed. See deploy/README.md."
+          else
+            curl --fail --silent --show-error -X POST "$DEPLOY_HOOK_URL"
+          fi

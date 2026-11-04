@@ -1,0 +1,937 @@
+{
+  "version": 1,
+  "about": "Names come from Labs/lab1/campus_location_catalog.md (NTU shuttle stops and carpark pages). NO COORDINATES ARE FILLED IN: they must come from `npm run geocode -w server` (Google Geocoding API) and a person must check every row on a map, then set reviewed to true. The seed script skips any place that is not reviewed. Reference points the team verified with OneMap on 2026-09-01: Hall 9 block 1.352114, 103.684894; Wee Kim Wee School 1.342196, 103.679880.",
+  "places": [
+    {
+      "name": "Hall 1",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 1",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 1 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 2",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 2",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 2 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 3",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 3 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 4",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 4",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 4 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 5",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 5 carpark",
+          "type": "CARPARK",
+          "note": "TODO: the catalog lists no own carpark for Hall 5; confirm the nearest one",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 6",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 6",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 6 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 7",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 7 carpark",
+          "type": "CARPARK",
+          "note": "TODO: the catalog lists no own carpark for Hall 7; confirm the nearest one",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 8",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 8 & 9",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 8 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 9",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 8 & 9",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 9 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 10",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 10 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 11",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 11",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 11 Blk 55",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 11 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 12",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 12",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 12 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 13",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 13 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 14",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Opp Hall 14",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 14 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 15",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Hall 15 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Hall 16",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Opp Hall 16",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Hall 16 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Crescent Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Crescent & Pioneer Halls carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Pioneer Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Crescent & Pioneer Halls carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Banyan Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Nanyang Crescent carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "North Hill carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Tanjong Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Nanyang Crescent carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "North Hill carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Binjai Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Nanyang Crescent carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "North Hill carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Saraca Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Nanyang Crescent carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "North Hill carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Tamarind Hall",
+      "zone": "HALLS",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Nanyang Crescent Halls",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Nanyang Crescent carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "North Hill carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "North Spine",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Lee Wee Nam",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark A",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark B",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "School of Biological Sciences / The Hive",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "School of Biological Sciences",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark SBS",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Wee Kim Wee School of Communication and Information",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Wee Kim Wee",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Opp WKW",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "South Spine (SPMS)",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "SPMS",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Opp SPMS",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark SPMS",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark ABS",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark Q",
+          "type": "CARPARK",
+          "note": "Pickup and drop-off only: season-parking lot (no waiting).",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "NIE / CEE",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "NIE Blk 2",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Opp CEE",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Administration Building / University Health Service",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Admin Building",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "University Health Service",
+          "type": "BUS_STOP",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark ADM",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark D",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark E",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Carpark F",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Sports & Recreation Centre / Food Court 2",
+      "zone": "ACADEMIC",
+      "isExit": false,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Carpark W",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        },
+        {
+          "name": "Food Court 2 carpark",
+          "type": "CARPARK",
+          "note": null,
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Main Gate",
+      "zone": "GATE",
+      "isExit": true,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Main Gate drop-off",
+          "type": "BUS_STOP",
+          "note": "TODO: the catalog names no stop here; confirm where drivers pull in",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Pioneer Road North Gate",
+      "zone": "GATE",
+      "isExit": true,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Pioneer MRT Exit B",
+          "type": "BUS_STOP",
+          "note": "Off-campus terminus of the Campus Rider",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    },
+    {
+      "name": "Jalan Bahar Gate",
+      "zone": "GATE",
+      "isExit": true,
+      "lat": null,
+      "lng": null,
+      "reviewed": false,
+      "source": null,
+      "pickupPoints": [
+        {
+          "name": "Jalan Bahar Gate drop-off",
+          "type": "BUS_STOP",
+          "note": "TODO: the catalog names no stop here; confirm where drivers pull in",
+          "lat": null,
+          "lng": null,
+          "walkDistanceM": null
+        }
+      ]
+    }
+  ]
+}

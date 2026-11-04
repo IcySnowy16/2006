@@ -1,0 +1,53 @@
+{
+  "name": "campus-hop",
+  "private": true,
+  "version": "0.2.0",
+  "description": "NTU Campus Hop - intra-campus carpooling (SC2006)",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @campus-hop/shared",
+    "build": "npm run build:shared && npm run build -w @campus-hop/server && npm run build -w @campus-hop/client",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "npm run typecheck -w @campus-hop/shared && npm run typecheck -w @campus-hop/server && npm run typecheck -w @campus-hop/client",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "depcheck": "depcruise --config .dependency-cruiser.cjs server/src client/src shared/src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:generate": "npm run prisma:generate -w @campus-hop/server",
+    "db:migrate": "npm run db:migrate -w @campus-hop/server",
+    "db:deploy": "npm run db:deploy -w @campus-hop/server",
+    "db:seed": "npm run db:seed -w @campus-hop/server",
+    "db:reset": "npm run db:reset -w @campus-hop/server",
+    "test:unit": "vitest run --project shared --project server --project client",
+    "test:db": "vitest run --project server-db",
+    "docs": "tsx scripts/gen-docs.ts",
+    "docs:check": "tsx scripts/gen-docs.ts --check",
+    "reset-db": "npm run db:reset && npm run db:seed",
+    "seed": "npm run db:seed",
+    "demo:reset": "tsx scripts/demo-reset.ts",
+    "replay-gps": "tsx server/scripts/replay-gps.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@vitest/coverage-v8": "^5.0.4",
+    "dependency-cruiser": "18.5.0",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript-eslint": "8.71.0",
+    "vitest": "^5.0.4"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
+  }
+}

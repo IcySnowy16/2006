@@ -1,0 +1,53 @@
+{
+  "name": "@campus-hop/server",
+  "private": true,
+  "version": "0.2.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prisma:generate": "prisma generate",
+    "db:migrate": "node ../scripts/with-env.mjs prisma migrate dev",
+    "db:deploy": "node ../scripts/with-env.mjs prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "node ../scripts/with-env.mjs prisma migrate reset --force",
+    "geocode": "tsx scripts/geocode-campus.ts",
+    "seed:prod": "node dist/seed/cli.js"
+  },
+  "dependencies": {
+    "@campus-hop/shared": "*",
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "3.0.3",
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.6",
+    "express": "^5.3.0",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0",
+    "jsonwebtoken": "9.0.3",
+    "nodemailer": "10.0.14",
+    "pino": "^10.4.0",
+    "prisma": "6.19.3",
+    "socket.io": "4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
+    "@types/cors": "2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "9.0.10",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
+    "socket.io-client": "4.8.4",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.4"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  }
+}

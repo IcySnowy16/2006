@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+coverage
+.git
+.env
+.env.*
+!.env.example
+.claude
+lab1
+lab2
+lab3
+*.pdf
+docs

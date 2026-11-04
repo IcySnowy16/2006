@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campus Hop Test Log</title>
+<style>
+  :root { --bg:#f7f8fa; --fg:#1b2330; --muted:#5b6678; --card:#fff; --line:#d9dee7; --accent:#1a5fb4; --pass:#1b7f3b; --fail:#b3261e; --skip:#7a6a00; --known:#6b3fa0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12161d; --fg:#e8ecf2; --muted:#9aa5b8; --card:#1b212c; --line:#2f3847; --accent:#7ab0ff; --pass:#5fd484; --fail:#ff8a80; --skip:#e6cf5a; --known:#c7a6ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 28px 0 8px; padding-top: 8px; border-top: 2px solid var(--line); }
+  p, li { max-width: 68ch; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin-top:8px; }
+  input[type=text], input[type=date], textarea { width:100%; font: inherit; padding: 8px; border:1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  textarea { min-height: 52px; resize: vertical; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+  .case { border-left: 4px solid var(--line); }
+  .case.pass { border-left-color: var(--pass); } .case.fail { border-left-color: var(--fail); } .case.skip { border-left-color: var(--skip); }
+  .case h3 { font-size: 1rem; margin: 0 0 4px; }
+  .id { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 600; margin-right: 6px; }
+  .tag { display:inline-block; font-size:.75rem; padding:1px 7px; border-radius: 99px; border:1px solid var(--known); color: var(--known); margin-left: 6px; vertical-align: middle; }
+  .steps { margin: 4px 0 4px 1.1rem; padding: 0; } .expect { margin: 4px 0; } .expect b { color: var(--accent); }
+  .radios { display:flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .radios label { display:inline-flex; align-items:center; gap:6px; margin:0; padding: 8px 14px; border:1px solid var(--line); border-radius: 8px; color: var(--fg); font-size: .95rem; min-height: 44px; cursor: pointer; }
+  .radios input { width: 18px; height: 18px; }
+  code { background: var(--bg); border:1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: .88em; overflow-wrap:anywhere; }
+  button { font: inherit; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; min-height: 44px; }
+  button.alt { background: transparent; color: var(--accent); }
+  .bar { position: sticky; top: 0; background: var(--bg); padding: 8px 0; border-bottom: 1px solid var(--line); z-index: 2; display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-variant-numeric: tabular-nums; }
+  .bar b { font-size: 1.05rem; }
+  .p { color: var(--pass); } .f { color: var(--fail); } .s { color: var(--skip); }
+  pre { white-space: pre-wrap; overflow-wrap:anywhere; background: var(--card); border:1px solid var(--line); border-radius: 8px; padding: 10px; font-size:.85rem; max-height: 320px; overflow:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Campus Hop test log</h1>
+  <p class="muted">Work top to bottom. Pick Pass, Fail or Skip for each case and write what you actually saw in the note (error text, screen, time). Answers are saved in this browser as you type. At the end press <b>Copy results</b> and paste them into the chat.</p>
+
+  <div class="card">
+    <div class="grid">
+      <div><label for="who">Tester</label><input type="text" id="who" data-meta></div>
+      <div><label for="when">Date</label><input type="date" id="when" data-meta></div>
+      <div><label for="dev">Device and browser (for example Pixel 8, Chrome 130)</label><input type="text" id="dev" data-meta></div>
+      <div><label for="commit">Commit tested (git log -1 --oneline)</label><input type="text" id="commit" data-meta></div>
+    </div>
+  </div>
+
+  <div class="bar" id="bar"></div>
+  <div id="cases"></div>
+
+  <h2>Results to paste</h2>
+  <div class="card">
+    <button id="copy">Copy results</button>
+    <button id="save" class="alt">Save as file</button>
+    <button id="reset" class="alt">Clear everything</button>
+    <p class="muted" id="msg" aria-live="polite"></p>
+    <pre id="out"></pre>
+  </div>
+</main>
+
+<script>
+// Demo accounts all use the password demo-password-1 (docs/demo-personas.md). Run npm run demo:reset before starting.
+var CASES = [
+ {sec:'0. Setup', id:'S1', t:'Install and start', steps:['<code>npm install</code>','Start Docker Desktop, wait for "Engine running"','<code>npm run dev</code>'], ex:'API on http://localhost:3000, web app on http://localhost:5173, no red errors in the terminal.'},
+ {id:'S2', t:'Health check', steps:['Open http://localhost:3000/api/health'], ex:'A small JSON answer that says the server is healthy.'},
+ {id:'S3', t:'Known demo state', steps:['Put <code>SEED_SYNTHETIC_CATALOG=1</code> and <code>SEED_DEMO_USERS=1</code> in <code>.env</code>','<code>npm run demo:reset</code>'], ex:'Ends without error. The people in docs/demo-personas.md exist: Dana, Priya, Wei, Sam, Lee.'},
+ {id:'S4', t:'Automated tests', steps:['<code>npm run test:unit</code>','Then, with Docker up, <code>npm run test:db</code>'], ex:'Write down how many files and tests passed and failed. A few failures are possible (see README); report the names.'},
+
+ {sec:'1. Accounts', id:'A1', t:'Sign up with a student address', steps:['Sign up with a new <code>@e.ntu.edu.sg</code> address and a strong password','Open the fake inbox http://localhost:8025, copy the code','Enter it on the verify screen'], ex:'Account is verified and you can sign in. Write down how long the e-mail took.'},
+ {id:'A2', t:'Sign up with a non-student address', known:'C-054', steps:['Try to sign up with <code>name@ntu.edu.sg</code> (no "e.")'], ex:'REFUSED: only @e.ntu.edu.sg may sign up. Known bug: it is currently accepted, so Fail is expected.'},
+ {id:'A3', t:'Weak password', known:'C-055', steps:['Sign up with the password <code>password1</code>'], ex:'A strength bar shows Weak and the sign-up is refused below Medium. Known gap: probably accepted.'},
+ {id:'A4', t:'Wrong password', steps:['Sign in as demo.driver@e.ntu.edu.sg with a wrong password'], ex:'A plain message that does not say whether the e-mail exists.'},
+ {id:'A5', t:'Sign out and back in', steps:['Sign out from the menu','Sign in again'], ex:'You land on the role choice or home, not an error.'},
+
+ {sec:'2. Roles', id:'R1', t:'Choose and switch role', steps:['Sign in as Dana (demo.driver@e.ntu.edu.sg, demo-password-1)','Pick "driver" on Choose role','Tap the role pill at the top, switch to passenger and back'], ex:'Each switch changes the home screen and the bottom tabs.'},
+ {id:'R2', t:'Role switch while live', steps:['As Dana, go live (case G1)','Try to switch role'], ex:'Refused with a clear message while a journey is live.'},
+
+ {sec:'3. Go live and match', id:'G1', t:'Driver goes live', steps:['Dana (driver): Go live','Choose the preset "Shared ride to the gate"','Share my location and go live'], ex:'Journey page opens with status LIVE. No "not found".'},
+ {id:'G2', t:'Rider finds the ride', steps:['In a second browser (private window), sign in as Priya (demo.rider1@e.ntu.edu.sg)','Request a hop from Hall B to Main Gate','Find a ride, then Choose this ride'], ex:'Dana\'s ride is listed with fare and pick-up point. The wallet check says "enough".'},
+ {id:'G3', t:'Rider asks, driver accepts', steps:['Priya: Ask the driver','Dana: Requests card shows Priya, press Accept'], ex:'Priya sees Confirmed. Seat count drops and the fare is on hold in Priya\'s wallet.'},
+ {id:'G4', t:'Driver declines', steps:['Repeat G2 with Sam, Dana presses Decline'], ex:'Sam is told it was declined and no money stays on hold.'},
+ {id:'G5', t:'Go live three times quickly', known:'NA-001', steps:['As Dana tap "Go live" three times very fast, or open it in three tabs'], ex:'Only one live journey. Known bug: three can be created.'},
+ {id:'G6', t:'Preset with a schedule', known:'NA-013', steps:['Make a preset with a departure time 1 to 2 hours ahead','Go live with it'], ex:'Dana is told clearly that riders will not see it until then. Known: silent wait.'},
+
+ {sec:'4. The trip', id:'T1', t:'Start, pick up, drop off, complete', steps:['Dana: Start trip','Terminal: <code>npm run replay-gps -- --url http://localhost:3000</code>','Dana: Picked up, Dropped off, Complete trip'], ex:'Priya\'s Your ride screen shows the dot moving and "driver is N m away".'},
+ {id:'T2', t:'Rider map dot', known:'T2-02', steps:['While replay-gps runs, watch Priya\'s map'], ex:'The dot moves. Known gap: it may stay still on the rider side.'},
+ {id:'T3', t:'Payment', steps:['After Complete, open Priya\'s wallet and Dana\'s earnings'], ex:'Priya is down $3.00, Dana earned $3.00 (simulated money).'},
+ {id:'T4', t:'Rating', steps:['Both press Rate after the trip'], ex:'Stars save once. Opening the finished ride again should not show empty stars (known NB-014).', known:'NB-014'},
+ {id:'T5', t:'Cancel after pick-up', known:'NB-002', steps:['As Priya, after "Picked up", look for Cancel booking and press it'], ex:'No Cancel offered after pick-up. Known bug: offered, then refused by the server.'},
+ {id:'T6', t:'No-show rider', known:'NB-018', steps:['Do not mark Priya picked up; as Dana mark her no-show'], ex:'Priya\'s page says she was marked a no-show. Known: still shows Confirmed.'},
+
+ {sec:'5. Wallet', id:'W1', t:'Enough balance', steps:['Sign in as Priya ($20.00)','Open Wallet and the request screen'], ex:'No warning banner.'},
+ {id:'W2', t:'Low balance warning', steps:['Sign in as Sam ($2.50)'], ex:'Yellow "getting low" banner. A $2 shared ride can be booked, a $3 solo ride says not enough.'},
+ {id:'W3', t:'Too low', steps:['Sign in as Wei ($1.00)','Try Find a ride'], ex:'Red banner says top up to at least $2.00; Find a ride refused; account not locked.'},
+ {id:'W4', t:'Top up', steps:['As Wei top up $5.00 with a button','Try a custom odd amount such as $1.37 if the screen allows it'], ex:'Balance rises by exactly $5.00. $1.37 should be refused (known NA-003: accepted).', known:'NA-003'},
+ {id:'W5', t:'Top up past the limit', steps:['Top up until the balance would pass $100'], ex:'A message that says how much room is left (known NB-021).', known:'NB-021'},
+ {id:'W6', t:'Locked account', steps:['Sign in as Lee (demo.locked@e.ntu.edu.sg)'], ex:'Banner on every screen, "What you owe" $0.70. Top up $1.00 and the account unlocks by itself.'},
+
+ {sec:'6. Sharing and fares', id:'F1', t:'Two riders share a trip', steps:['Dana is live. Priya and Sam both request and Dana accepts both'], ex:'Both fares fall from $3.00 to $2.00 once the second is accepted.'},
+ {id:'F2', t:'One rider cancels', known:'PQ-N-presenter-14', steps:['From F1, cancel one rider before the trip, then finish the trip with the other'], ex:'The other\'s fare goes back to $3.00. Known danger: with only $2.00 in the wallet the ride ends unpaid and the account locks. Record exactly what happens.'},
+
+ {sec:'7. Roles clash', id:'X1', t:'Driver adds passenger role while live', known:'NA-012', steps:['Dana is live as driver','Add the passenger role, sign out, sign in again'], ex:'Dana can still reach her own journey. Known HIGH bug: locked out.'},
+ {id:'X2', t:'Same place twice', known:'NA-002', steps:['Request a hop with identical pick-up and drop-off if the screen lets you'], ex:'Refused. Known: the server may accept it.'},
+
+ {sec:'8. Notifications and history', id:'N1', t:'Notifications', steps:['During G2 to G3 watch the bell for both users'], ex:'Each important change makes one notification; unread count falls when read.'},
+ {id:'N2', t:'Trip history', steps:['Open Trips for Priya after T1'], ex:'The finished ride is listed with date, fare and your rating.'},
+
+ {sec:'9. Phone', id:'P1', t:'Layout at 390 px', steps:['Open the app on a phone, or Chrome DevTools at 390 wide','Visit Home, Go live, Request, Wallet, Trips'], ex:'No sideways scroll, buttons at least thumb size, tabs not covered. Write the screens that break.'},
+ {id:'P2', t:'Long name', known:'NB-001', steps:['Set a name of 40 letters with no spaces'], ex:'Page stays within the screen. Known: widens.'},
+ {id:'P3', t:'Install as an app', steps:['On a phone over https or localhost, use "Add to Home screen"'], ex:'It installs and opens full screen. Mark Skip if you cannot test https.'},
+ {id:'P4', t:'Sideways and big text', known:'NB-016', steps:['Turn the phone sideways','Set the phone text size to the largest'], ex:'Content still readable; bell badge does not hide the bell (NB-023).'},
+
+ {sec:'10. Anything else', id:'Z1', t:'Anything surprising', steps:['Free exploring for 10 minutes'], ex:'Write each surprise in the note: screen, what you pressed, what happened.'}
+];
+var KEY='campushop-testlog-v1', state={meta:{},res:{}};
+try { state = JSON.parse(localStorage.getItem(KEY)) || state; } catch(e) {}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e) {} }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+var host=document.getElementById('cases');
+CASES.forEach(function(c){
+  if(c.sec){ var h=document.createElement('h2'); h.textContent=c.sec; host.appendChild(h); }
+  var r=state.res[c.id]||{v:'',n:''};
+  var d=document.createElement('div'); d.className='card case'; d.id='case-'+c.id;
+  d.innerHTML='<h3><span class="id">'+c.id+'</span>'+esc(c.t)+(c.known?'<span class="tag">known: '+esc(c.known)+'</span>':'')+'</h3>'
+   +'<ol class="steps">'+c.steps.map(function(s){return '<li>'+s+'</li>';}).join('')+'</ol>'
+   +'<div class="expect"><b>Should happen:</b> '+esc(c.ex)+'</div>'
+   +'<div class="radios" role="radiogroup" aria-label="Result for '+c.id+'">'
+   +['pass','fail','skip'].map(function(v){return '<label><input type="radio" name="r-'+c.id+'" value="'+v+'"'+(r.v===v?' checked':'')+'> '+v[0].toUpperCase()+v.slice(1)+'</label>';}).join('')+'</div>'
+   +'<label for="n-'+c.id+'">What you saw</label><textarea id="n-'+c.id+'">'+esc(r.n)+'</textarea>';
+  host.appendChild(d);
+  paint(c.id);
+  d.addEventListener('change', function(e){ if(e.target.name==='r-'+c.id){ cell(c.id).v=e.target.value; save(); paint(c.id); refresh(); } });
+  d.querySelector('textarea').addEventListener('input', function(e){ cell(c.id).n=e.target.value; save(); refresh(); });
+});
+function cell(id){ return state.res[id]||(state.res[id]={v:'',n:''}); }
+function paint(id){ var el=document.getElementById('case-'+id), v=(state.res[id]||{}).v; el.classList.remove('pass','fail','skip'); if(v) el.classList.add(v); }
+
+document.querySelectorAll('[data-meta]').forEach(function(i){
+  i.value=state.meta[i.id]||'';
+  i.addEventListener('input', function(){ state.meta[i.id]=i.value; save(); refresh(); });
+});
+
+function counts(){ var c={pass:0,fail:0,skip:0,open:0}; CASES.forEach(function(x){ var v=(state.res[x.id]||{}).v; if(v) c[v]++; else c.open++; }); return c; }
+function report(){
+  var m=state.meta, c=counts(), L=[];
+  L.push('# Campus Hop test results');
+  L.push('Tester: '+(m.who||'?')+' | Date: '+(m.when||'?')+' | Device: '+(m.dev||'?')+' | Commit: '+(m.commit||'?'));
+  L.push('Pass '+c.pass+' | Fail '+c.fail+' | Skip '+c.skip+' | Not done '+c.open+' | Total '+CASES.length);
+  L.push('');
+  CASES.forEach(function(x){ var r=state.res[x.id]||{}, v=r.v?r.v.toUpperCase():'NOT DONE';
+    if(r.v==='pass' && !r.n) return;
+    L.push('- '+x.id+' '+x.t+(x.known?' [known '+x.known+']':'')+': '+v+(r.n?' - '+r.n.replace(/\s+/g,' '):'')); });
+  L.push('(Pass cases with no note are left out.)');
+  return L.join('\n');
+}
+function refresh(){
+  var c=counts();
+  document.getElementById('bar').innerHTML='<b>'+(CASES.length-c.open)+' / '+CASES.length+' done</b><span class="p">Pass '+c.pass+'</span><span class="f">Fail '+c.fail+'</span><span class="s">Skip '+c.skip+'</span>';
+  document.getElementById('out').textContent=report();
+}
+function say(t){ document.getElementById('msg').textContent=t; }
+document.getElementById('copy').onclick=function(){
+  var t=report();
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){say('Copied. Paste it into the chat.');}, function(){ say('Copy was refused: select the text below and copy it by hand.'); }); }
+  else say('Select the text below and copy it by hand.');
+};
+document.getElementById('save').onclick=function(){
+  try { var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([report()],{type:'text/plain'})); a.download='campus-hop-test-results.txt'; document.body.appendChild(a); a.click(); a.remove(); say('Saved to your downloads.'); }
+  catch(e){ say('Saving did not work: use Copy results.'); }
+};
+document.getElementById('reset').onclick=function(){
+  if(this.dataset.sure!=='1'){ this.dataset.sure='1'; this.textContent='Press again to clear everything'; return; }
+  state={meta:{},res:{}}; save(); location.reload();
+};
+refresh();
+</script>
+</body>
+</html>

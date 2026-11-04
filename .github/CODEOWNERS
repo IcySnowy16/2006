@@ -1,0 +1,13 @@
+# Placeholder. GitHub rejects unknown handles, so these stay commented out until the team
+# fills in real GitHub usernames (see docs/team.json). Then uncomment and replace @handle.
+#
+# Shared files with a single owner (lane 1):
+# /prisma/schema.prisma                @lane1-handle
+# /server/src/routes/index.ts          @lane1-handle
+# /server/src/app.ts                   @lane1-handle
+# /server/src/errors/AppError.ts       @lane1-handle
+# /package.json                        @lane1-handle
+# /package-lock.json                   @lane1-handle
+#
+# Lane 2:
+# /client/src/router.tsx               @lane2-handle
