@@ -1,7 +1,7 @@
 # Campus Hop test results (40-case sheet, automated run)
 
 Tester: Claude (Playwright, headless Chromium) | Date: 2026-11-04 | Device: Chromium 390-420 px, mobile emulation | Commit: 6f5050e
-Pass 22 | Fail 14 | Partial 2 | Skip 2 | Total 40
+Pass 23 | Fail 14 | Partial 1 | Skip 2 | Total 40
 Set-up: Linux cloud container, Node 22.23, Docker 29, `npm run dev`, `npm run demo:reset` before each scenario. No Google key (the built-in fake route): the key that was provided is restricted to the Routes API, and this draft calls the Directions API, so going live returned `REQUEST_DENIED` and failed.
 
 ## New (not tagged on the sheet)
@@ -10,7 +10,6 @@ Set-up: Linux cloud container, Node 22.23, Docker 29, `npm run dev`, `npm run de
 - G1 Driver goes live: FAIL - the journey page shows "This journey was not found." for up to 5 s after going live, then fixes itself. Cause: `client/src/pages/DriverTripPages.tsx:88` navigates on success without refreshing the cached `journeys.mine` list (the page polls every 5 s). Fix: `await refresh('journeys.mine')` before `navigate`, or seed the cache with the returned journey.
 - T1 Rider sees "driver is N m away": FAIL - the banner never appears. The server sends `pickup:status` with a distance only when the status changes (`server/src/realtime/LocationService.ts:80-83`), not with every position. A rider who opens the screen after the change to Approaching never gets one. `location:update` frames do reach the rider: 13 in 12 s, checked on the socket.
 - G6 (detail): a preset whose departure time is after midnight (today 23:00 + 90 min = Thu 00:29) is ignored: the journey goes live at once. Only a same-day departure gets the delay.
-- N1 Notifications: PARTIAL - each change makes one notification (accepted, trip started, almost there, arrived, no-show). Opening the list does not lower the unread count; only "Mark all as read" does (not checked).
 - N2 Trip history: PARTIAL - the ride is listed with its date, fare and Paid, but not with your rating.
 - G4 wording: a declined rider's booking says "Cancelled. Any money on hold has been released.", not "declined". The money is right.
 
@@ -54,6 +53,7 @@ Set-up: Linux cloud container, Node 22.23, Docker 29, `npm run dev`, `npm run de
 - W4 Top up: PASS for $5.00 exactly (1.00 to 6.00). SKIP for $1.37: there is no custom amount field, only buttons $5 to $100.
 - W6 Locked account: PASS - the banner is on every screen, What you owe $0.70, and Top up $1.00 (only on the /locked page) gives "You owe nothing. Your account is active." with $0.30 left.
 - F1 Two riders share: PASS - Priya's fare $3.00 to $2.00 once Sam was accepted. Sam's offer showed $2.00.
+- N1 Notifications: PASS - each change makes one notification (accepted, trip started, almost there, arrived, no-show). Opening one lowers the unread count by 1, and "Mark all as read" takes it to 0, which survives a reload. Odd: the "Send me push notifications" box is ticked while the text says push is not switched on yet.
 - P1 Layout at 390 px: PASS - 10 screens checked with the repo's own phone audit: no sideways scroll, no tap target under 44 px, no input under 16 px, nothing covered.
 
 ## Skip
@@ -72,3 +72,12 @@ Set-up: Linux cloud container, Node 22.23, Docker 29, `npm run dev`, `npm run de
 - T6: add "wait 3 minutes after I have arrived": No-show is disabled until then.
 - X1: Dana already holds both roles after demo:reset, so the case needs a new driver-only account (sign up as "Driver: I give rides", create a preset, go live, then Profile > "Also ride as a passenger").
 - S3: add `npm run build:shared` before `npm run demo:reset` until dev.mjs builds it.
+
+## The sheet itself (checks 1 and 2, 40-case version, file not edited)
+
+Checked at 390 px, mobile emulation, light and dark, with screenshots.
+- No script errors, no sideways scroll, no clipped text, and no input under 16 px. Dark mode is readable.
+- The four Tester/Date/Device/Commit boxes are 41-43 px tall, just under 44 px. Fix: `min-height: 44px` on `input[type=text], input[type=date]`.
+- Sticky bar: jumping to a case (scrollIntoView, or the new sheet's section links) leaves its heading about 28 px under the counter bar, for all 40 cases. Fix: `.case, h2 { scroll-margin-top: 64px; }`.
+- Copy results: Pass with no note is left out, Pass with a note, Fail with a note (the line break becomes a space) and Skip are shown right, and the counts match the bar. But every unanswered case is printed as NOT DONE (36 lines for 4 answers). The 121-case version reportedly lists only fails and notes.
+- Answers, notes and the tester fields survive a reload (localStorage). "Copy results" says "Copied."
