@@ -71,7 +71,10 @@ describe('Q1: calculateFare, equivalence classes and boundaries (FR 5.1.1, 5.1.2
       },
     };
     const holds: [string, number][] = [];
-    const service = new FareService({} as never, { adjustHold: async (_tx: unknown, id: string, cents: number) => void holds.push([id, cents]) } as never);
+    const service = new FareService(
+      { flags: { fareLock: true } } as never,
+      { adjustHold: async (_tx: unknown, id: string, cents: number) => void holds.push([id, cents]) } as never,
+    );
     const events: { name: string; payload: unknown }[] = [];
     const queue = { push: (name: string, payload: unknown) => void events.push({ name, payload }) };
 

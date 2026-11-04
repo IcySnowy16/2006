@@ -337,6 +337,16 @@ export function BookConfirmPage() {
   );
 }
 
+/**
+ * The line under the fare. "It drops" only while it still can (above the shared fare, vetting C-026), and with the fareLock flag the
+ * rider is told the fare will not go back up (vetting F2).
+ */
+export function fareNote(finalCents: number | null, currentCents: number, fareLock: boolean): string {
+  if (finalCents !== null) return 'Final fare';
+  const drops = currentCents > DEFAULTS.FARE_SHARED_CENTS ? ' It drops if another rider joins.' : '';
+  return `Current fare.${drops}${fareLock ? ' It will not go above this.' : ''}`;
+}
+
 // ------------------------------------------------------------------------------------------------ the booking: waiting, confirmed, tracking, done
 export function BookingPage() {
   const { id = '' } = useParams();
@@ -366,6 +376,7 @@ export function BookingPage() {
   const [stars, setStars] = useState(0);
   const [rated, setRated] = useState(false);
   const rate = useApiMutation('ratings.create', { onSuccess: () => setRated(true) });
+  const features = useApiQuery('system.features', undefined, { staleTime: 5 * 60_000 });
 
   if (booking.isLoading) return <Spinner />;
   if (!b) return <ErrorBanner error={booking.error} />;
@@ -379,17 +390,20 @@ export function BookingPage() {
         Your ride{b.counterpartFirstName ? ` with ${b.counterpartFirstName}` : ''}
       </PageTitle>
       <div className="row between">
-        <StatusChip status={b.status} />
+        <StatusChip status={b.pickupStatus === 'NO_SHOW' ? 'NO_SHOW' : b.status} />
         {confirmed && <StatusChip status={status} />}
       </div>
       {b.status === 'PENDING' && <Banner kind="info">Waiting for the driver to confirm. You can cancel at any time.</Banner>}
       {b.status === 'CANCELLED' && <Banner kind="warn">This booking is cancelled. Any money on hold has been released.</Banner>}
+      {b.pickupStatus === 'NO_SHOW' && (
+        <Banner kind="warn">The driver marked you as a no-show after waiting at the pickup point. You were not charged and your hold has been released.</Banner>
+      )}
       {b.bookedOnTrust && b.status !== 'CANCELLED' && <Banner kind="warn">Booked on trust: top up before the trip ends.</Banner>}
       <Card title="Fare">
         <span className="big">
           <Money cents={b.finalFareCents ?? b.currentFareCents} />
         </span>
-        <span className="muted small">{b.finalFareCents === null ? 'Current fare: it drops if another rider joins.' : 'Final fare'}</span>
+        <span className="muted small">{fareNote(b.finalFareCents, b.currentFareCents, features.data?.fareLock === true)}</span>
         <SimulatedNote />
         {b.paymentStatus === 'UNPAID' && (
           <Banner kind="error">
@@ -425,8 +439,8 @@ export function BookingPage() {
           )}
         </Card>
       )}
-      {/* Not once the trip has started (UC-11.EX.1): only then can we follow the car, or has the pickup moved past WAITING. */}
-      {['PENDING', 'CONFIRMED'].includes(b.status) && !channel.joined && b.pickupStatus === 'WAITING' && (
+      {/* The server decides (UC-11.EX.1): not once the trip has started or the pickup has moved past WAITING (vetting T5). */}
+      {b.canCancel && (
         <>
           <Button variant="danger" onClick={() => setAskCancel(true)}>
             Cancel booking

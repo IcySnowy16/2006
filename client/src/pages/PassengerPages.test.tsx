@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { apiError, campus, http, HttpResponse, passengerMe, server } from '../test/server';
 import { renderAt } from '../test/utils';
+import { fareNote } from './PassengerPages';
 
 vi.mock('../hooks/useSocket', () => ({
   useNotificationSocket: () => undefined,
@@ -267,20 +268,24 @@ describe('Confirm booking: the wallet check (UC-7, FR 10.2 to 10.4)', () => {
 });
 
 describe('The booking screen (UC-11, UC-15, UC-19)', () => {
-  const booking = (o: Record<string, unknown> = {}) => ({
-    id: 'b1',
-    journeyId: 'j1',
-    status: 'CONFIRMED',
-    pickupStatus: 'WAITING',
-    paymentStatus: 'HELD',
-    bookedOnTrust: false,
-    currentFareCents: 200,
-    finalFareCents: null,
-    pickupPointId: 'hallB-stop',
-    dropoffPointId: 'gate-stop',
-    counterpartFirstName: 'Dana',
-    ...o,
-  });
+  const booking = (o: Record<string, unknown> = {}) => {
+    const b = {
+      id: 'b1',
+      journeyId: 'j1',
+      status: 'CONFIRMED',
+      pickupStatus: 'WAITING',
+      paymentStatus: 'HELD',
+      bookedOnTrust: false,
+      currentFareCents: 200,
+      finalFareCents: null,
+      pickupPointId: 'hallB-stop',
+      dropoffPointId: 'gate-stop',
+      counterpartFirstName: 'Dana',
+      ...o,
+    };
+    // As the server works it out (mappers.canCancelBooking) unless a test sets it, e.g. a trip that started while still WAITING.
+    return { canCancel: ['PENDING', 'CONFIRMED'].includes(b.status) && b.pickupStatus === 'WAITING', ...b };
+  };
 
   it('confirmed: shows the current fare, a Call button and Cancel; cancelling asks first and then sends', async () => {
     let cancelled = false;
@@ -351,6 +356,34 @@ describe('The booking screen (UC-11, UC-15, UC-19)', () => {
     fireEvent.click(screen.getByRole('radio', { name: '4 stars' }));
     fireEvent.click(send);
     expect(await screen.findByText('You have already rated this ride.')).toBeInTheDocument();
+  });
+
+  it('vetting T5: no Cancel button when the server says the booking can no longer be cancelled (trip started)', async () => {
+    server.use(
+      places,
+      http.get('*/api/bookings/b1', () => HttpResponse.json(booking({ canCancel: false }))),
+    );
+    renderAt(<App />, { route: '/passenger/booking/b1', me: passengerMe });
+    expect(await screen.findByText('Your ride with Dana')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel booking' })).not.toBeInTheDocument();
+  });
+
+  it('vetting T6: a rider marked no-show is told so, and the chip says no show instead of confirmed', async () => {
+    server.use(
+      places,
+      http.get('*/api/bookings/b1', () => HttpResponse.json(booking({ pickupStatus: 'NO_SHOW', canCancel: false }))),
+    );
+    renderAt(<App />, { route: '/passenger/booking/b1', me: passengerMe });
+    expect(await screen.findByText(/marked you as a no-show/)).toBeInTheDocument();
+    expect(screen.getByText('no show')).toBeInTheDocument();
+    expect(screen.queryByText('confirmed')).not.toBeInTheDocument();
+  });
+
+  it('vetting C-026 / F2: the fare note promises a drop only while one is possible, and says when the fare is locked', () => {
+    expect(fareNote(null, 300, false)).toBe('Current fare. It drops if another rider joins.');
+    expect(fareNote(null, 200, false)).toBe('Current fare.');
+    expect(fareNote(null, 200, true)).toBe('Current fare. It will not go above this.');
+    expect(fareNote(250, 200, true)).toBe('Final fare');
   });
 
   it('cancelling after the trip started is explained, not shown as a crash', async () => {

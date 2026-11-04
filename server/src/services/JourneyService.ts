@@ -13,7 +13,7 @@ import type { CancelReason, Hop } from '@campus-hop/shared';
 import type { z } from 'zod';
 import type { AppContext } from '../context';
 import { addMs, minutes } from '../core/clock';
-import { lockJourney, withTransaction } from '../core/transaction';
+import { lockJourney, lockUser, withTransaction } from '../core/transaction';
 import { Booking, type BookingRecord } from '../entities/Booking';
 import { Driver, type DriverRecord } from '../entities/Driver';
 import { capacityFor, Journey, type JourneyRecord } from '../entities/Journey';
@@ -72,6 +72,14 @@ export class JourneyService {
     );
 
     const journeyId = await withTransaction(async (tx) => {
+      // Re-check under the user lock that booking also takes, so "go live" and "book a ride" at the same moment cannot both pass
+      // (vetting V-2). The checks above stay: they answer fast, before the Maps call.
+      await lockUser(tx, driverId);
+      const ridingNow = await tx.booking.findFirst({
+        where: { passengerId: driverId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
+      });
+      if (ridingNow)
+        throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You have a ride booked as a passenger. Finish or cancel it before you drive.' });
       const created = await tx.journey.create({
         data: {
           driverId,

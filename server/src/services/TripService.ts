@@ -186,11 +186,12 @@ export class TripService {
 
       // Passenger wallets are locked in a fixed order, THEN the driver's, so a settlement and a top-up can never deadlock.
       for (const b of carried) {
-        const result = await this.wallets.deduct(tx, b.id, fare!);
+        const charge = this.fares.lockedFare(fare!, b.currentFareCents); // never above the agreed fare when fareLock is on (F2)
+        const result = await this.wallets.deduct(tx, b.id, charge);
         takenBy.push({ bookingId: b.id, cents: result.takenCents });
         await tx.booking.update({
           where: { id: b.id },
-          data: { status: 'COMPLETED', finalFareCents: fare!, paymentStatus: result.shortfallCents === 0 ? 'PAID' : 'UNPAID' },
+          data: { status: 'COMPLETED', finalFareCents: charge, paymentStatus: result.shortfallCents === 0 ? 'PAID' : 'UNPAID' },
         });
         if (result.shortfallCents > 0) unpaid.push({ bookingId: b.id, passengerId: b.passengerId, shortfall: result.shortfallCents });
         else await tx.user.update({ where: { id: b.passengerId }, data: { completedRides: { increment: 1 } } });

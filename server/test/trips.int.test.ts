@@ -152,6 +152,7 @@ describe('D1: pickup transitions (UC-13)', () => {
 
   it('NO_SHOW releases the hold, frees the seat and re-tiers the other rider back to $3.00 (FR 6.8, 5.1.3)', async () => {
     const w = await trip();
+    w.t.ctx.flags.fareLock = false; // this test checks SRS FR 5.1.3 as written; the fareLock default is tested in vetting.int.test.ts
     await w.start().expect(200);
     const [a, b] = w.bookings;
     await new TripService(w.t.ctx).systemPickupStatus(a!.id, 'ARRIVED', 5, 10);
@@ -223,6 +224,7 @@ describe('D1: complete and settle (UC-14)', () => {
 
   it('one rider and one no-show: the rider pays the solo fare of $3.00; the no-show pays nothing and gets a fare of 0', async () => {
     const w = await trip();
+    w.t.ctx.flags.fareLock = false; // this test checks SRS FR 5.1.3 as written; the fareLock default is tested in vetting.int.test.ts
     await w.start().expect(200);
     const [carried, absent] = w.bookings;
     await new TripService(w.t.ctx).systemPickupStatus(absent!.id, 'ARRIVED', 1, 1);

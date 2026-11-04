@@ -98,6 +98,11 @@ export const Booking = z.object({
   dropoffPointId: Id,
   /** First name of the other person on the trip (the driver for a passenger, the passenger for a driver). Only filled by the read routes. */
   counterpartFirstName: z.string().nullable(),
+  /**
+   * True when the passenger may cancel right now (UC-11): the booking is PENDING or CONFIRMED, the rider is still WAITING and the
+   * trip has not started. Worked out by the server so the Cancel button never shows when the server would refuse it (vetting T5).
+   */
+  canCancel: z.boolean(),
 });
 export const BookingList = z.array(Booking);
 

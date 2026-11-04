@@ -30,6 +30,15 @@ export async function lockWallet(tx: Tx, userId: string): Promise<void> {
   await tx.$queryRaw`SELECT "userId" FROM "Wallet" WHERE "userId" = ${userId} FOR UPDATE`;
 }
 
+/**
+ * Lock a user row: serialises one person's own actions that span several journeys (vetting: two parallel bookings on two different
+ * journeys each locked only their own journey, so both passed "no booking in progress"). Take it AFTER any journey lock: settlement
+ * already updates user rows while holding the journey lock, so the same order everywhere means no deadlock.
+ */
+export async function lockUser(tx: Tx, userId: string): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+}
+
 export async function lockBooking(tx: Tx, bookingId: string): Promise<void> {
   await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
 }

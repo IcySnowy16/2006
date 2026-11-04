@@ -27,7 +27,14 @@ export function toJourney(j: JourneyWithRoute): Journey {
   };
 }
 
-export function toBooking(b: Prisma.BookingGetPayload<object>, counterpartFirstName: string | null = null): Booking {
+/** UC-11: a passenger may cancel before the trip starts and before being picked up. Without the journey's status, the booking decides. */
+export function canCancelBooking(b: Pick<Prisma.BookingGetPayload<object>, 'status' | 'pickupStatus'>, journeyStatus?: string): boolean {
+  if (b.status !== 'PENDING' && b.status !== 'CONFIRMED') return false;
+  if (b.pickupStatus !== 'WAITING') return false;
+  return journeyStatus === undefined || ['LIVE', 'OPEN', 'FULL'].includes(journeyStatus);
+}
+
+export function toBooking(b: Prisma.BookingGetPayload<object>, counterpartFirstName: string | null = null, journeyStatus?: string): Booking {
   return {
     id: b.id,
     journeyId: b.journeyId,
@@ -40,6 +47,7 @@ export function toBooking(b: Prisma.BookingGetPayload<object>, counterpartFirstN
     pickupPointId: b.pickupPointId,
     dropoffPointId: b.dropoffPointId,
     counterpartFirstName,
+    canCancel: canCancelBooking(b, journeyStatus),
   };
 }
 

@@ -15,7 +15,7 @@
 import type { BalanceCheck, ErrorCode, Hop } from '@campus-hop/shared';
 import type { z } from 'zod';
 import type { AppContext } from '../context';
-import { lockJourney, withTransaction } from '../core/transaction';
+import { lockJourney, lockUser, withTransaction } from '../core/transaction';
 import { Booking, type BookingRecord } from '../entities/Booking';
 import { Journey, type JourneyRecord } from '../entities/Journey';
 import { AppError } from '../errors/AppError';
@@ -75,6 +75,7 @@ export class BookingService {
     const queue = new EventQueue();
     const created = await withTransaction(async (tx) => {
       await lockJourney(tx, body.journeyId);
+      await lockUser(tx, passengerId); // one booking at a time per passenger, even across two journeys (vetting race V-1)
       const journey = await tx.journey.findUnique({ where: { id: body.journeyId } });
       if (!journey) throw new AppError('NOT_FOUND', { message: 'That journey does not exist.' });
       const user = await tx.user.findUniqueOrThrow({ where: { id: passengerId } });
@@ -254,7 +255,7 @@ export class BookingService {
     const row = await this.ctx.db().booking.findUnique({ where: { id: bookingId }, include: { journey: { include: { driver: true } }, passenger: true } });
     if (!row) throw new AppError('NOT_FOUND');
     if (row.passengerId !== userId && row.journey.driverId !== userId) throw new AppError('FORBIDDEN');
-    const dto = toBooking(row, firstName((row.passengerId === userId ? row.journey.driver : row.passenger).name));
+    const dto = toBooking(row, firstName((row.passengerId === userId ? row.journey.driver : row.passenger).name), row.journey.status);
     // A PENDING booking's stored fare was right when it was made; riders may have joined or left since. Show what accepting it costs now.
     if (row.status === 'PENDING' && Journey.fromRecord(row.journey as unknown as JourneyRecord).isOpenForBooking()) {
       dto.currentFareCents = await this.fares.fareIfJoining(row.journeyId);
@@ -273,7 +274,7 @@ export class BookingService {
       this.ctx.flags.reorderPickups && journey.route
         ? orderAlongRoute(rows, storedPoints(journey.route.points), (b) => ({ lat: b.pickupPoint.latitude, lng: b.pickupPoint.longitude }))
         : rows;
-    return ordered.map((b) => toBooking(b, firstName(b.passenger.name)));
+    return ordered.map((b) => toBooking(b, firstName(b.passenger.name), journey.status));
   }
 
   /**

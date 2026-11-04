@@ -56,12 +56,21 @@ export class FareService {
     if (confirmed.length === 0) return null;
     const fare = this.fareForRiders(confirmed.length);
     for (const b of confirmed) {
-      if (b.currentFareCents === fare) continue;
-      await tx.booking.update({ where: { id: b.id }, data: { currentFareCents: fare } });
-      await this.wallets.adjustHold(tx, b.id, fare);
-      queue.push('FareChanged', { bookingId: b.id, passengerId: b.passengerId, oldCents: b.currentFareCents, newCents: fare });
+      const next = this.lockedFare(fare, b.currentFareCents);
+      if (b.currentFareCents === next) continue;
+      await tx.booking.update({ where: { id: b.id }, data: { currentFareCents: next } });
+      await this.wallets.adjustHold(tx, b.id, next);
+      queue.push('FareChanged', { bookingId: b.id, passengerId: b.passengerId, oldCents: b.currentFareCents, newCents: next });
     }
     return fare;
+  }
+
+  /**
+   * What one rider pays when the headcount fare is `tierCents` and the rider last agreed to `agreedCents`. With the fareLock flag
+   * (vetting F2) the fare may fall but never rise above what the rider agreed to; without it, the headcount fare (FR 5.1.3).
+   */
+  lockedFare(tierCents: number, agreedCents: number): number {
+    return this.ctx.flags.fareLock ? Math.min(tierCents, agreedCents) : tierCents;
   }
 
   /**

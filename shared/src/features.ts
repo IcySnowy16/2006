@@ -20,6 +20,13 @@ export const FEATURE_DEFAULTS = {
   bookOnTrust: false,
   /** The offline shell page of the PWA. */
   offlineShell: true,
+  /**
+   * A rider never pays more than the fare they last agreed to (vetting F2). When a co-rider cancels or is a no-show the fare can
+   * still DROP but never rises back, so a rider with exactly the shared fare in the wallet is not pushed into debt and locked for
+   * someone else's choice. This is how Grab (fixed upfront fares) and UberX Share (the discount is kept even without a match) price
+   * shared rides. Off: SRS FR 5.1.3 as written (the riders left pay by the new, higher headcount fare).
+   */
+  fareLock: true,
 } as const;
 
 export type FeatureName = keyof typeof FEATURE_DEFAULTS;

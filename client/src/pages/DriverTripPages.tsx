@@ -127,6 +127,21 @@ export function GoLivePage() {
   );
 }
 
+/**
+ * Vetting G6: a preset with a schedule less than two hours ahead makes the journey depart at that time, not now. Say so, because
+ * "Start trip" is refused until then and the driver would otherwise not know why.
+ */
+export function ScheduledNote({ departureTime, now = Date.now() }: { departureTime: string; now?: number }) {
+  const at = new Date(departureTime).getTime();
+  if (at - now < 60_000) return null;
+  const time = new Intl.DateTimeFormat('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }).format(at);
+  return (
+    <Banner kind="info">
+      Scheduled to depart at {time}, from your preset. Riders can book now; you can start the trip from {time}.
+    </Banner>
+  );
+}
+
 // ------------------------------------------------------------------------------------------------ live journey: request cards
 export function DriverJourneyPage() {
   const { id = '' } = useParams();
@@ -196,6 +211,7 @@ export function DriverJourneyPage() {
           {journey.seatsAvailable} seat{journey.seatsAvailable === 1 ? '' : 's'} free
         </span>
       </div>
+      {live && <ScheduledNote departureTime={journey.departureTime} />}
       {['CANCELLED', 'EXPIRED'].includes(journey.status) ? (
         <>
           <Banner kind={journey.status === 'EXPIRED' ? 'warn' : 'error'}>

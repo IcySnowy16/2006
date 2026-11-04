@@ -230,6 +230,7 @@ describe('C3: accept (UC-10)', () => {
 
   it('cancelling one of two riders puts the other back to $3.00 with the hold raised, and the seat returns (FULL -> OPEN)', async () => {
     const w = await world({ plan: 'SHARING' });
+    w.t.ctx.flags.fareLock = false; // this test checks SRS FR 5.1.3 as written; the fareLock default is tested in vetting.int.test.ts
     const a = await makePassenger({ balanceCents: 500 });
     const b = await makePassenger({ balanceCents: 500 });
     const ba = (await w.book(a)).body;

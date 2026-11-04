@@ -1,9 +1,10 @@
 /** Tasks B6, B7, C5, D5 (screens): presets, go live, request cards, the active trip, trip complete. */
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { apiError, campus, driverMe, http, HttpResponse, server } from '../test/server';
 import { renderAt } from '../test/utils';
+import { ScheduledNote } from './DriverTripPages';
 
 const channel = {
   joined: true,
@@ -411,5 +412,17 @@ describe('Trip complete (UC-14, UC-19)', () => {
     renderAt(<App />, { route: '/driver/complete/j1', me: driverMe });
     expect(await screen.findByText(/could not pay in full/)).toBeInTheDocument();
     expect(await screen.findByText('$1.00')).toBeInTheDocument(); // the part-payment that reached the wallet, as in the wallet itself
+  });
+});
+
+describe('vetting G6: a scheduled departure is shown, not silent', () => {
+  const now = Date.parse('2026-11-04T23:40:00Z'); // 07:40 in Singapore
+  it('says the departure time in Singapore time when it is ahead', () => {
+    render(<ScheduledNote departureTime="2026-11-05T00:00:00Z" now={now} />);
+    expect(screen.getByText(/Scheduled to depart at 08:00/)).toBeInTheDocument();
+  });
+  it('says nothing for a journey that departs now', () => {
+    const { container } = render(<ScheduledNote departureTime="2026-11-04T23:40:00Z" now={now} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
