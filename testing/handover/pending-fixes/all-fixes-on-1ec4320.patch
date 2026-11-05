@@ -1,0 +1,2540 @@
+diff --git a/client/src/api/hooks.ts b/client/src/api/hooks.ts
+index f5f126d..73f54b5 100644
+--- a/client/src/api/hooks.ts
++++ b/client/src/api/hooks.ts
+@@ -1,4 +1,5 @@
+ /** Task K9: TanStack Query wrappers over `call`, keyed by endpoint name + input so a mutation can refresh exactly what it changed. */
++import { useRef } from 'react';
+ import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
+ import type { EndpointName } from '@campus-hop/shared';
+ import { call, type CallInput, type Out } from './client';
+@@ -16,3 +17,18 @@ export function useRefresh() {
+   const qc = useQueryClient();
+   return (...names: EndpointName[]) => Promise.all(names.map((n) => qc.invalidateQueries({ queryKey: [n] })));
+ }
++
++/**
++ * One request at a time from a button. A second tap can arrive before React has drawn the button busy, so `isPending` alone
++ * lets it through (and the server answers it 409 after the first one worked): this guard flips at once and is released when
++ * the request settles, after the mutation's own `onSettled` (such as a refresh) has run.
++ * `const once = useOneAtATime(); once(accept.mutate, { params: { id } })`; buttons that must not overlap share one guard.
++ */
++export function useOneAtATime() {
++  const busy = useRef(false);
++  return <I>(mutate: (input: I, options: { onSettled: () => void }) => void, input: I) => {
++    if (busy.current) return;
++    busy.current = true;
++    mutate(input, { onSettled: () => void (busy.current = false) });
++  };
++}
+diff --git a/client/src/components/ui.tsx b/client/src/components/ui.tsx
+index a46ff5d..06dbf1b 100644
+--- a/client/src/components/ui.tsx
++++ b/client/src/components/ui.tsx
+@@ -84,6 +84,18 @@ export function Badge({ tone = 'neutral', children }: { tone?: 'neutral' | 'good
+ 
+ export const dollars = (cents: number) => `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+ 
++/**
++ * What a person typed as dollars, in whole cents: only a plain amount with at most two decimals ("5", "5.5", "5.50"), the same
++ * rule as the server's Money.fromDollars. Anything else ("0x2", "1e2", "Infinity", "-1", "") is null. Panel N-f1-04: Number()
++ * read "0x2" as $2.00.
++ */
++export function centsFromDollars(text: string): number | null {
++  const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text.trim());
++  if (!m) return null;
++  const cents = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
++  return Number.isSafeInteger(cents) ? cents : null;
++}
++
+ /** Money is always whole cents in the API; this is the only place it becomes text. */
+ export function Money({ cents }: { cents: number }) {
+   return <span className="money">{dollars(cents)}</span>;
+diff --git a/client/src/pages/AccountPages.test.tsx b/client/src/pages/AccountPages.test.tsx
+index 04110eb..120c5cb 100644
+--- a/client/src/pages/AccountPages.test.tsx
++++ b/client/src/pages/AccountPages.test.tsx
+@@ -143,6 +143,30 @@ describe('Wallet (UC-20)', () => {
+     expect(await screen.findByText(/cannot withdraw more than you have available/)).toBeInTheDocument();
+   });
+ 
++  it('Withdraw takes only a plain dollar amount: 0x2, 0x64, 1e2, Infinity and 2.505 are refused next to the box (N-f1-04)', async () => {
++    let sent: unknown = null;
++    server.use(
++      wallet({ balanceCents: 500, heldCents: 0, availableCents: 500 }),
++      http.post('*/api/wallet/withdraw', async ({ request }) => {
++        sent = await request.json();
++        return HttpResponse.json({ balanceCents: 250, heldCents: 0, availableCents: 250, debt: null });
++      }),
++    );
++    renderAt(<App />, { route: '/wallet', me: driverMe });
++    const box = await screen.findByLabelText('Amount to withdraw in dollars');
++    const button = screen.getByRole('button', { name: 'Withdraw' });
++    for (const bad of ['0x2', '0x64', '1e2', 'Infinity', '2.505', '-3', '$2']) {
++      fireEvent.change(box, { target: { value: bad } });
++      expect(button).toBeDisabled();
++      expect(screen.getByText('Enter a dollar amount like 5 or 5.50.')).toBeInTheDocument();
++    }
++    fireEvent.change(box, { target: { value: ' 2.5 ' } });
++    expect(screen.queryByText('Enter a dollar amount like 5 or 5.50.')).toBeNull();
++    expect(button).toBeEnabled();
++    fireEvent.click(button);
++    await waitFor(() => expect(sent).toEqual({ amountCents: 250 }));
++  });
++
+   it('lists the ledger in words, not codes', async () => {
+     server.use(
+       wallet(),
+@@ -162,16 +186,25 @@ describe('Wallet (UC-20)', () => {
+ describe('Locked account (UC-13.EX.1)', () => {
+   const locked = { ...passengerMe, accountStatus: 'LOCKED' as const };
+ 
+-  it('shows the exact shortfall and suggests topping up at least that much', async () => {
++  it('shows the exact debt and suggests a top-up that pays it AND leaves the $2.00 needed to book again (panel C-028)', async () => {
+     server.use(wallet({ balanceCents: 0, heldCents: 0, availableCents: 0, debt: { amountCents: 70, createdAt: '2026-10-18T08:00:00.000Z' } }));
+     renderAt(<App />, { route: '/locked', me: locked });
+     expect(await screen.findByText('What you owe')).toBeInTheDocument();
+     expect(screen.getAllByText('$0.70').length).toBeGreaterThan(0);
+     expect(screen.getByText('Your account is locked', { selector: 'h1' })).toBeInTheDocument();
+-    expect(screen.getByText(/Top up at least/)).toHaveTextContent('$1.00'); // the smallest top-up the system takes
++    // $0.70 owed + $2.00 to book again - $0.00 available = $2.70 (it used to say $1.00, which unlocked but left $0.30)
++    expect(screen.getByText(/to pay what you owe and keep/)).toHaveTextContent('Top up $2.70 to pay what you owe and keep $2.00');
++    expect(screen.getByRole('button', { name: 'Top up $2.70' })).toBeInTheDocument();
++    expect(screen.getByText(/only unlocks the account/)).toHaveTextContent('A top-up of $1.00 only unlocks the account');
+     expect(screen.getAllByText(/SIMULATED money/).length).toBeGreaterThan(0);
+   });
+ 
++  it('counts what is already available: $0.50 owed with $0.30 available suggests $2.20 (panel C-028)', async () => {
++    server.use(wallet({ balanceCents: 30, heldCents: 0, availableCents: 30, debt: { amountCents: 50, createdAt: '2026-10-18T08:00:00.000Z' } }));
++    renderAt(<App />, { route: '/locked', me: locked });
++    expect(await screen.findByRole('button', { name: 'Top up $2.20' })).toBeInTheDocument();
++  });
++
+   it('the banner on every screen tells a locked passenger why, with a link', async () => {
+     server.use(wallet());
+     renderAt(<App />, { route: '/wallet', me: locked });
+diff --git a/client/src/pages/AccountPages.tsx b/client/src/pages/AccountPages.tsx
+index f95a854..e55ac39 100644
+--- a/client/src/pages/AccountPages.tsx
++++ b/client/src/pages/AccountPages.tsx
+@@ -23,6 +23,7 @@ import {
+   SimulatedNote,
+   StarPicker,
+   StatusChip,
++  centsFromDollars,
+   dollars,
+ } from '../components/ui';
+ import { closeSocket } from '../hooks/useSocket';
+@@ -103,7 +104,8 @@ export function WalletPage() {
+   const [amount, setAmount] = useState('');
+   const withdraw = useApiMutation('wallet.withdraw', { onSuccess: () => refresh('wallet.get', 'wallet.transactions') });
+   const w = wallet.data;
+-  const cents = Math.round(Number(amount) * 100);
++  const cents = centsFromDollars(amount); // null unless a plain dollar amount (N-f1-04)
++  const badAmount = amount.trim() !== '' && cents === null;
+   return (
+     <>
+       <PageTitle>Wallet</PageTitle>
+@@ -145,10 +147,20 @@ export function WalletPage() {
+               onChange={(e) => setAmount(e.target.value)}
+               style={{ flex: 1 }}
+             />
+-            <Button variant="secondary" disabled={!(cents >= 100)} busy={withdraw.isPending} onClick={() => withdraw.mutate({ body: { amountCents: cents } })}>
++            <Button
++              variant="secondary"
++              disabled={cents === null || cents < 100}
++              busy={withdraw.isPending}
++              onClick={() => cents !== null && withdraw.mutate({ body: { amountCents: cents } })}
++            >
+               Withdraw
+             </Button>
+           </div>
++          {badAmount && (
++            <p className="field-error" role="alert">
++              Enter a dollar amount like 5 or 5.50.
++            </p>
++          )}
+           {isCode(withdraw.error, 'INSUFFICIENT_BALANCE') ? (
+             <Banner kind="error">You cannot withdraw more than you have available.</Banner>
+           ) : (
+@@ -180,7 +192,10 @@ export function LockedAccountPage() {
+   const wallet = useApiQuery('wallet.get');
+   const w = wallet.data;
+   const owed = w?.debt?.amountCents ?? 0;
+-  const shortfall = Math.max(100, owed - (w?.availableCents ?? 0));
++  const available = w?.availableCents ?? 0;
++  // Panel C-028: unlocking only needs the debt covered, but booking again needs MIN_BALANCE_TO_RIDE_CENTS left after it is paid.
++  const toUnlock = Math.max(DEFAULTS.TOP_UP_MIN_CENTS, owed - available);
++  const toRideAgain = Math.max(DEFAULTS.TOP_UP_MIN_CENTS, owed + DEFAULTS.MIN_BALANCE_TO_RIDE_CENTS - available);
+   return (
+     <>
+       <PageTitle
+@@ -201,9 +216,16 @@ export function LockedAccountPage() {
+             From a ride whose fare your balance could not cover in full. Your available balance is <Money cents={w.availableCents} />.
+           </p>
+           <p>
+-            Top up at least <strong>{dollars(shortfall)}</strong> and your account unlocks by itself.
++            Top up <strong>{dollars(toRideAgain)}</strong> to pay what you owe and keep {dollars(DEFAULTS.MIN_BALANCE_TO_RIDE_CENTS)}, enough to book your next
++            ride. Your account unlocks by itself.
+           </p>
+-          <TopUp suggested={shortfall} />
++          {toUnlock < toRideAgain && (
++            <p className="muted small">
++              A top-up of {dollars(toUnlock)} only unlocks the account: it pays what you owe but leaves less than {dollars(DEFAULTS.MIN_BALANCE_TO_RIDE_CENTS)},
++              so you could not book yet.
++            </p>
++          )}
++          <TopUp suggested={toRideAgain} />
+         </Card>
+       ) : (
+         w && (
+diff --git a/client/src/pages/DriverPages.test.tsx b/client/src/pages/DriverPages.test.tsx
+index 81dc779..de1dbf3 100644
+--- a/client/src/pages/DriverPages.test.tsx
++++ b/client/src/pages/DriverPages.test.tsx
+@@ -137,6 +137,17 @@ describe('Preset editor (UC-3, FR 3.1.x)', () => {
+     expect(body).toMatchObject({ name: 'To the gate', exitGateId: 'gate', plan: 'SHARING', detourToleranceMin: 3, exemptionConfirmed: true, schedule: null });
+   });
+ 
++  it("a link to a preset that is not the driver's says so instead of an empty form (N-f3-10)", async () => {
++    server.use(
++      places,
++      http.get('*/api/presets', () => HttpResponse.json([preset])),
++    );
++    renderAt(<App />, { route: '/driver/presets/doesnotexist', me: driverMe });
++    expect(await screen.findByText('This preset was not found.')).toBeInTheDocument();
++    expect(screen.getByRole('link', { name: 'Back to presets' })).toHaveAttribute('href', '/driver/presets');
++    expect(screen.queryByLabelText('Preset name')).toBeNull();
++  });
++
+   it('a driver with no vehicle is asked for it first, and cannot save a preset yet', async () => {
+     server.use(places);
+     renderAt(<App />, { route: '/driver/presets/new', me: { ...driverMe, hasDriverProfile: false } });
+@@ -245,6 +256,46 @@ describe('The live journey and request cards (UC-10, UC-5)', () => {
+     expect(await screen.findByText('No seats are left on this journey.')).toBeInTheDocument();
+   });
+ 
++  it('one answer at a time: a double tap on Decline, or Accept then Decline, sends one request and shows no error (N-f3-07)', async () => {
++    const sent: string[] = [];
++    let answered = false;
++    const slow = (what: string) => async () => {
++      sent.push(what);
++      if (answered) return apiError(409, 'ILLEGAL_STATE_TRANSITION', 'Only a request waiting for an answer can be declined.');
++      await new Promise((r) => setTimeout(r, 50));
++      answered = true;
++      return HttpResponse.json(booking({ status: what === 'accept' ? 'CONFIRMED' : 'DECLINED' }));
++    };
++    server.use(
++      places,
++      http.get('*/api/journeys/mine', () => HttpResponse.json([journey({ status: 'LIVE', seatsAvailable: 3 })])),
++      http.get('*/api/journeys/j1/requests', () => HttpResponse.json(answered ? [] : [card])),
++      http.get('*/api/journeys/j1/bookings', () => HttpResponse.json([])),
++      http.post('*/api/journeys/j1/position', () => new HttpResponse(null, { status: 204 })),
++      http.post('*/api/bookings/b1/accept', slow('accept')),
++      http.post('*/api/bookings/b1/decline', slow('decline')),
++    );
++    const first = renderAt(<App />, { route: '/driver/journey/j1', me: driverMe });
++    const decline = await screen.findByRole('button', { name: 'Decline' });
++    fireEvent.click(decline);
++    fireEvent.click(decline);
++    expect(await screen.findByText('No requests yet')).toBeInTheDocument();
++    expect(sent).toEqual(['decline']);
++    expect(screen.queryByText(/Only a request waiting/)).toBeNull();
++    first.unmount();
++
++    sent.length = 0;
++    answered = false;
++    renderAt(<App />, { route: '/driver/journey/j1', me: driverMe });
++    const accept = await screen.findByRole('button', { name: 'Accept' });
++    const declineToo = screen.getByRole('button', { name: 'Decline' });
++    fireEvent.click(accept);
++    fireEvent.click(declineToo);
++    expect(await screen.findByText('No requests yet')).toBeInTheDocument();
++    expect(sent).toEqual(['accept']);
++    expect(screen.queryByText(/Only a request waiting/)).toBeNull();
++  });
++
+   it('an open request that nobody booked yet has no Accept button (the passenger books)', async () => {
+     server.use(...base([{ ...card, bookingId: null, hopRequestId: 'h1' }]));
+     renderAt(<App />, { route: '/driver/journey/j1', me: driverMe });
+@@ -367,9 +418,11 @@ describe('The active trip (UC-12, UC-13, UC-15)', () => {
+ });
+ 
+ describe('Trip complete (UC-14, UC-19)', () => {
++  const completed = http.get('*/api/journeys/mine', () => HttpResponse.json([journey({ status: 'COMPLETED', seatsAvailable: 0 })]));
+   it('shows what the driver earned, says it is simulated, and offers a rating for each rider who was carried', async () => {
+     let sent: unknown;
+     server.use(
++      completed,
+       http.get('*/api/journeys/j1/bookings', () =>
+         HttpResponse.json([
+           booking({ status: 'COMPLETED', pickupStatus: 'DROPPED_OFF', paymentStatus: 'PAID', finalFareCents: 200 }),
+@@ -399,8 +452,26 @@ describe('Trip complete (UC-14, UC-19)', () => {
+     expect(sent).toEqual({ stars: 5 });
+   });
+ 
++  it('a journey that is not completed has no summary: unknown says not found, live goes to its page (N-f3-09)', async () => {
++    const first = renderAt(<App />, { route: '/driver/complete/doesnotexist', me: driverMe });
++    expect(await screen.findByText('This trip was not found.')).toBeInTheDocument();
++    expect(screen.queryByText('Trip complete')).toBeNull();
++    first.unmount();
++    server.use(
++      places,
++      http.get('*/api/journeys/mine', () => HttpResponse.json([journey({ status: 'OPEN' })])),
++      http.get('*/api/journeys/j1/requests', () => HttpResponse.json([])),
++      http.get('*/api/journeys/j1/bookings', () => HttpResponse.json([])),
++      http.post('*/api/journeys/j1/position', () => new HttpResponse(null, { status: 204 })),
++    );
++    renderAt(<App />, { route: '/driver/complete/j1', me: driverMe });
++    expect(await screen.findByText('Your journey')).toBeInTheDocument();
++    expect(screen.queryByText('Trip complete')).toBeNull();
++  });
++
+   it('a rider who could not pay in full: what they did pay is counted, and the rest is said to come later', async () => {
+     server.use(
++      completed,
+       http.get('*/api/journeys/j1/bookings', () =>
+         HttpResponse.json([booking({ status: 'COMPLETED', pickupStatus: 'UNPAID', paymentStatus: 'UNPAID', finalFareCents: 300 })]),
+       ),
+diff --git a/client/src/pages/DriverSetupPages.tsx b/client/src/pages/DriverSetupPages.tsx
+index 5e26759..d834108 100644
+--- a/client/src/pages/DriverSetupPages.tsx
++++ b/client/src/pages/DriverSetupPages.tsx
+@@ -204,6 +204,14 @@ export function PresetEditorPage() {
+   };
+ 
+   if (locations.isLoading || presets.isLoading) return <Spinner />;
++  // A link to a preset that is not (or no longer) the driver's: say so, instead of an empty form that only fails on Save.
++  if (id && presets.isSuccess && !existing)
++    return (
++      <>
++        <Banner kind="error">This preset was not found.</Banner>
++        <LinkButton to="/driver/presets">Back to presets</LinkButton>
++      </>
++    );
+   return (
+     <>
+       <PageTitle sub="Everything about a repeat journey lives here. There is no per-trip form.">{id ? 'Edit preset' : 'New preset'}</PageTitle>
+diff --git a/client/src/pages/DriverTripPages.tsx b/client/src/pages/DriverTripPages.tsx
+index f4d0fbc..976acac 100644
+--- a/client/src/pages/DriverTripPages.tsx
++++ b/client/src/pages/DriverTripPages.tsx
+@@ -8,7 +8,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
+ import type { Hop } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import { call, errorMessage, isCode } from '../api/client';
+-import { useApiMutation, useApiQuery, useRefresh } from '../api/hooks';
++import { useApiMutation, useApiQuery, useOneAtATime, useRefresh } from '../api/hooks';
+ import { useAuth } from '../auth/AuthContext';
+ import { Spinner } from '../components/Spinner';
+ import { TrackingMap } from '../components/TrackingMap';
+@@ -154,6 +154,9 @@ export function DriverJourneyPage() {
+ 
+   const accept = useApiMutation('bookings.accept', { onSettled: () => refresh('journeys.requests', 'bookings.forJourney', 'journeys.mine') });
+   const decline = useApiMutation('bookings.decline', { onSettled: () => refresh('journeys.requests', 'bookings.forJourney') });
++  // One answer at a time across every card: a double tap, or Accept then Decline, would send a second answer the server refuses.
++  const answer = useOneAtATime();
++  const answering = accept.isPending || decline.isPending;
+   const cancel = useApiMutation('journeys.cancel', {
+     onSuccess: async () => {
+       await refresh('journeys.mine');
+@@ -210,13 +213,17 @@ export function DriverJourneyPage() {
+               ? 'Nobody booked in time, so this journey ended.'
+               : journey.cancelReason === 'GEOFENCE'
+                 ? 'This journey was cancelled because you left the campus before starting.'
+-                : 'This journey was cancelled.'}
++                : journey.cancelReason === 'NOT_STARTED'
++                  ? 'This journey was cancelled because it was not started in time. The money held for your riders was released.'
++                  : journey.cancelReason === 'ABANDONED'
++                    ? 'This trip was ended because no position came from your phone for a long time. Nobody was charged.'
++                    : 'This journey was cancelled.'}
+           </Banner>
+           <LinkButton to="/driver">Back home</LinkButton>
+         </>
+       ) : (
+         <>
+-          <TrackingMap polyline={journey.route?.polyline ?? null} position={lastFix} receivedAt={lastFix ? Date.now() : null} />
++          <TrackingMap polyline={journey.route?.polyline ?? null} position={lastFix} />
+           {problem && <Banner kind="warn">{problem}</Banner>}
+           <h2>Requests</h2>
+           <ErrorBanner error={accept.error ?? decline.error} />
+@@ -251,12 +258,18 @@ export function DriverJourneyPage() {
+                   {c.bookingId ? (
+                     <div className="row">
+                       <Button
+-                        onClick={() => accept.mutate({ params: { id: c.bookingId! } })}
++                        onClick={() => answer(accept.mutate, { params: { id: c.bookingId! } })}
++                        disabled={answering}
+                         busy={accept.isPending && accept.variables?.params?.id === c.bookingId}
+                       >
+                         Accept
+                       </Button>
+-                      <Button variant="secondary" onClick={() => decline.mutate({ params: { id: c.bookingId! } })}>
++                      <Button
++                        variant="secondary"
++                        onClick={() => answer(decline.mutate, { params: { id: c.bookingId! } })}
++                        disabled={answering}
++                        busy={decline.isPending && decline.variables?.params?.id === c.bookingId}
++                      >
+                         Decline
+                       </Button>
+                     </div>
+@@ -364,7 +377,7 @@ export function DriverTripPage() {
+       <PageTitle sub={held ? 'Your screen stays on during the trip.' : 'Keep this screen open: browsers cannot track you in the background.'}>
+         Trip in progress
+       </PageTitle>
+-      <TrackingMap polyline={journey.route?.polyline ?? null} position={lastFix} receivedAt={lastFix ? Date.now() : null} />
++      <TrackingMap polyline={journey.route?.polyline ?? null} position={lastFix} />
+       {problem && <Banner kind="warn">{problem}</Banner>}
+       {channel.error && <Banner kind="warn">Live sharing: {channel.error}</Banner>}
+       <ErrorBanner error={mark.error ?? complete.error} />
+@@ -436,19 +449,27 @@ export function DriverTripPage() {
+ // ------------------------------------------------------------------------------------------------ trip complete + rate riders
+ export function TripCompletePage() {
+   const { id = '' } = useParams();
++  const { journey, isLoading } = useMyJourney(id, 0);
++  const done = journey?.status === 'COMPLETED';
+   // always ask again: the copy cached on the trip screen was taken before the fares were settled
+-  const bookings = useApiQuery('bookings.forJourney', { params: { id } }, { refetchOnMount: 'always' });
++  const bookings = useApiQuery('bookings.forJourney', { params: { id } }, { enabled: done, refetchOnMount: 'always' });
+   const [rated, setRated] = useState<Record<string, boolean>>({});
+   const [stars, setStars] = useState<Record<string, number>>({});
+   const rate = useApiMutation('ratings.create', { onSuccess: (_r, v) => setRated((r) => ({ ...r, [(v as { params: { id: string } }).params.id]: true })) });
+ 
+-  const ledger = useApiQuery('wallet.transactions', {}, { refetchOnMount: 'always' });
++  const ledger = useApiQuery('wallet.transactions', {}, { enabled: done, refetchOnMount: 'always' });
+   const carried = bookings.data?.filter((b) => b.status === 'COMPLETED' && b.pickupStatus !== 'NO_SHOW') ?? [];
+   // Earned = what reached the wallet for these riders (CREDIT rows), so this matches the wallet and the history, including a
+   // part-payment from a rider who could not pay in full.
+   const ids = new Set(carried.map((b) => b.id));
+   const earned = (ledger.data ?? []).filter((t) => t.type === 'CREDIT' && t.bookingId !== null && ids.has(t.bookingId)).reduce((s, t) => s + t.amountCents, 0);
+   const owed = carried.some((b) => b.paymentStatus === 'UNPAID');
++  // Only a completed journey of this driver has a summary: an unknown id says so, and a journey that is still live or in
++  // progress goes to its own page (which also explains a cancelled or expired one), as the journey and trip pages do.
++  if (isLoading) return <Spinner />;
++  if (!journey) return <Banner kind="error">This trip was not found.</Banner>;
++  if (journey.status === 'IN_PROGRESS') return <Navigate to={`/driver/trip/${id}`} replace />;
++  if (journey.status !== 'COMPLETED') return <Navigate to={`/driver/journey/${id}`} replace />;
+   return (
+     <>
+       <PageTitle sub="Fares go straight into your wallet.">Trip complete</PageTitle>
+diff --git a/client/src/pages/PassengerPages.test.tsx b/client/src/pages/PassengerPages.test.tsx
+index 66b214e..683b180 100644
+--- a/client/src/pages/PassengerPages.test.tsx
++++ b/client/src/pages/PassengerPages.test.tsx
+@@ -1,22 +1,27 @@
+ /** Tasks B8, B9, C6 (screens): request a hop, matches, the wallet check before booking, and the booking screen. */
+ import { fireEvent, screen, waitFor } from '@testing-library/react';
+-import { describe, expect, it, vi } from 'vitest';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
+ import { App } from '../App';
+ import { apiError, campus, http, HttpResponse, passengerMe, server } from '../test/server';
+ import { renderAt } from '../test/utils';
+ 
++const quiet = () => ({
++  joined: false,
++  error: null,
++  position: null as null | { lat: number; lng: number; accuracyM: number; ts: string },
++  positionAt: null as number | null,
++  pickups: {} as Record<string, { status: string }>,
++  noShowOpen: {},
++  journeyStatus: null,
++  sendPosition: () => undefined,
++});
++let channel = quiet();
++beforeEach(() => {
++  channel = quiet();
++});
+ vi.mock('../hooks/useSocket', () => ({
+   useNotificationSocket: () => undefined,
+-  useJourneyChannel: () => ({
+-    joined: false,
+-    error: null,
+-    position: null,
+-    positionAt: null,
+-    pickups: {},
+-    noShowOpen: {},
+-    journeyStatus: null,
+-    sendPosition: () => undefined,
+-  }),
++  useJourneyChannel: () => channel,
+   closeSocket: () => undefined,
+ }));
+ 
+@@ -249,6 +254,26 @@ describe('Confirm booking: the wallet check (UC-7, FR 10.2 to 10.4)', () => {
+     expect(body).toEqual({ journeyId: 'j1', pickupPointId: 'hallB-stop', dropoffPointId: 'gate-stop', hopRequestId: 'h1' });
+   });
+ 
++  it('a double tap on "Ask the driver" asks only once (N-f3-08)', async () => {
++    let posts = 0;
++    server.use(
++      places,
++      preview('ENOUGH'),
++      http.post('*/api/bookings', async () => {
++        posts += 1;
++        await new Promise((r) => setTimeout(r, 50));
++        return apiError(409, 'CONFLICT', 'You already have a booking in progress.');
++      }),
++    );
++    renderAt(<App />, { route, me: passengerMe });
++    const ask = await screen.findByRole('button', { name: 'Ask the driver' });
++    await waitFor(() => expect(ask).toBeEnabled());
++    fireEvent.click(ask);
++    fireEvent.click(ask);
++    await screen.findByText('You already have a booking in progress.');
++    expect(posts).toBe(1);
++  });
++
+   it('the last seat taken, and a locked account, each get their own explanation', async () => {
+     server.use(
+       places,
+@@ -353,6 +378,48 @@ describe('The booking screen (UC-11, UC-15, UC-19)', () => {
+     expect(await screen.findByText('You have already rated this ride.')).toBeInTheDocument();
+   });
+ 
++  it('a double tap on "Yes, cancel" cancels only once (N-f3-08)', async () => {
++    let posts = 0;
++    server.use(
++      places,
++      http.get('*/api/bookings/b1', () => HttpResponse.json(booking(posts ? { status: 'CANCELLED' } : {}))),
++      http.post('*/api/bookings/b1/cancel', async () => {
++        posts += 1;
++        await new Promise((r) => setTimeout(r, 50));
++        return HttpResponse.json(booking({ status: 'CANCELLED' }));
++      }),
++    );
++    renderAt(<App />, { route: '/passenger/booking/b1', me: passengerMe });
++    fireEvent.click(await screen.findByRole('button', { name: 'Cancel booking' }));
++    const yes = screen.getByRole('button', { name: 'Yes, cancel' });
++    fireEvent.click(yes);
++    fireEvent.click(yes);
++    expect(await screen.findByText(/This booking is cancelled/)).toBeInTheDocument();
++    expect(posts).toBe(1);
++  });
++
++  it('after "arrived", a driver who drove away is shown as gone with the distance; jitter at the stop is not (N-f3-02)', async () => {
++    const pickupPosition = { lat: 1.3483, lng: 103.6831 };
++    server.use(
++      places,
++      http.get('*/api/bookings/b1', () => HttpResponse.json(booking({ pickupStatus: 'ARRIVED', pickupPosition, routePolyline: null }))),
++    );
++    const at = (dLat: number) => {
++      channel.joined = true;
++      channel.position = { lat: pickupPosition.lat + dLat, lng: pickupPosition.lng, accuracyM: 10, ts: new Date().toISOString() };
++      channel.positionAt = Date.now();
++    };
++    at(0.0005); // about 56 m: still at the stop as far as GPS can tell
++    const first = renderAt(<App />, { route: '/passenger/booking/b1', me: passengerMe });
++    expect(await screen.findByText('Your driver has arrived.')).toBeInTheDocument();
++    expect(screen.queryByText(/moved away/)).toBeNull();
++    first.unmount();
++    at(0.003); // about 334 m
++    renderAt(<App />, { route: '/passenger/booking/b1', me: passengerMe });
++    expect(await screen.findByText(/Your driver has moved away from your pickup and is 33\d m away/)).toBeInTheDocument();
++    expect(screen.queryByText('Your driver has arrived.')).toBeNull();
++  });
++
+   it('cancelling after the trip started is explained, not shown as a crash', async () => {
+     server.use(
+       places,
+diff --git a/client/src/pages/PassengerPages.tsx b/client/src/pages/PassengerPages.tsx
+index 4e23021..ee93d09 100644
+--- a/client/src/pages/PassengerPages.tsx
++++ b/client/src/pages/PassengerPages.tsx
+@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
+ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+ import { DEFAULTS } from '@campus-hop/shared';
+ import { errorMessage, isCode } from '../api/client';
+-import { useApiMutation, useApiQuery, useRefresh } from '../api/hooks';
++import { useApiMutation, useApiQuery, useOneAtATime, useRefresh } from '../api/hooks';
+ import { useAuth } from '../auth/AuthContext';
+ import { LowBalanceNotice } from '../components/LowBalanceNotice';
+ import { Spinner } from '../components/Spinner';
+@@ -267,6 +267,7 @@ export function BookConfirmPage() {
+   const [dropoff, setDropoff] = useState('');
+   const dropoffId = dropoff || destination?.pickupPoints[0]?.id || '';
+   const book = useApiMutation('bookings.create', { onSuccess: (b) => navigate(`/passenger/booking/${b.id}`, { replace: true }) });
++  const once = useOneAtATime(); // a double tap would ask twice (the second is refused: a booking is already in progress)
+ 
+   if (preview.isLoading) return <Spinner />;
+   const p = preview.data;
+@@ -329,7 +330,7 @@ export function BookConfirmPage() {
+         busy={book.isPending}
+         disabled={!p || p.check === 'NOT_ENOUGH' || !dropoffId || !pickup}
+         onClick={() =>
+-          book.mutate({ body: { journeyId, pickupPointId: pickup, dropoffPointId: dropoffId, ...(requestId ? { hopRequestId: requestId } : {}) } })
++          once(book.mutate, { body: { journeyId, pickupPointId: pickup, dropoffPointId: dropoffId, ...(requestId ? { hopRequestId: requestId } : {}) } })
+         }
+       >
+         Ask the driver
+@@ -366,6 +367,7 @@ export function BookingPage() {
+   });
+   const [stars, setStars] = useState(0);
+   const [rated, setRated] = useState(false);
++  const once = useOneAtATime(); // a double tap on "Yes, cancel" would cancel twice (the second is refused)
+   const rate = useApiMutation('ratings.create', { onSuccess: () => setRated(true) });
+ 
+   if (booking.isLoading) return <Spinner />;
+@@ -373,8 +375,16 @@ export function BookingPage() {
+   const live = channel.pickups[b.id];
+   const status = latestPickup(b.pickupStatus, live?.status);
+   // Worked out from every live position (the server only sends a distance when the pickup status changes).
+-  const awayM = channel.position && b.pickupPosition ? Math.round(distanceM(channel.position, b.pickupPosition)) : (live?.distanceM ?? null);
++  // Only a fresh, accurate fix counts (the server ignores fixes worse than LOW_ACCURACY_M for the same reason).
++  const fresh =
++    channel.position !== null &&
++    channel.position.accuracyM <= DEFAULTS.LOW_ACCURACY_M &&
++    channel.positionAt !== null &&
++    Date.now() - channel.positionAt <= DEFAULTS.LOCATION_STALE_S * 1000;
++  const awayM = fresh && b.pickupPosition ? Math.round(distanceM(channel.position!, b.pickupPosition)) : null;
+   const done = b.status === 'COMPLETED';
++  // The status never goes back, so after "arrived" only the live distance can tell that the driver drove on (N-f3-02).
++  const movedAway = status === 'ARRIVED' && typeof awayM === 'number' && awayM > DEFAULTS.LEFT_PICKUP_M;
+ 
+   return (
+     <>
+@@ -403,12 +413,13 @@ export function BookingPage() {
+       {confirmed && (
+         <>
+           <TrackingMap polyline={b.routePolyline ?? null} position={channel.position} receivedAt={channel.positionAt} />
+-          {typeof awayM === 'number' && (status === 'WAITING' || status === 'APPROACHING') && (
++          {typeof awayM === 'number' && awayM > DEFAULTS.ARRIVED_M && (status === 'WAITING' || status === 'APPROACHING') && (
+             <Banner kind="info">
+               Driver is {awayM} m away, about {Math.max(1, Math.round(awayM / ((DEFAULTS.AVG_SPEED_KMH * 1000) / 60)))} min.
+             </Banner>
+           )}
+-          {status === 'ARRIVED' && <Banner kind="good">Your driver has arrived.</Banner>}
++          {movedAway && <Banner kind="warn">Your driver has moved away from your pickup and is {awayM} m away. Call them if you are not sure.</Banner>}
++          {status === 'ARRIVED' && !movedAway && <Banner kind="good">Your driver has arrived.</Banner>}
+           {!channel.joined && <p className="muted small">Live tracking starts when the driver begins the trip.</p>}
+           <CallButton bookingId={b.id} name={b.counterpartFirstName} />
+         </>
+@@ -450,7 +461,7 @@ export function BookingPage() {
+         danger
+         busy={cancel.isPending}
+         onCancel={() => setAskCancel(false)}
+-        onConfirm={() => cancel.mutate({ params: { id: b.id } })}
++        onConfirm={() => once(cancel.mutate, { params: { id: b.id } })}
+       >
+         <p>The driver is told and any money held for this ride is released.</p>
+       </ConfirmDialog>
+diff --git a/docs/decisions-defaults.md b/docs/decisions-defaults.md
+index dc27701..11eb2fe 100644
+--- a/docs/decisions-defaults.md
++++ b/docs/decisions-defaults.md
+@@ -20,9 +20,16 @@ Generated from `shared/src/defaults.ts` (`npm run docs`). **Nothing here has bee
+ | SRS Q7 | How long does a LIVE journey wait? | 15 minutes. | config LIVE_WINDOW_MIN, expiry job |
+ | SRS Q8 | Scheduling window and time tolerance? | Same day only; plus or minus 15 minutes. | HopRequestService, MatchingService |
+ | SRS Q9 | Does a rider's fare drop when another joins? | Yes, to the shared fare, with a notification. | FareService.retier |
++| Panel F2 / C-027 | Does a confirmed rider's fare rise again when another rider cancels or is a no-show? | No. A confirmed fare only falls: the riders left keep the fare they have (at most the fare they confirmed at) and the driver earns less on that trip. Raising it put a $2.00 rider on $3.00 without asking, ran them short and locked the account. | FareService.retier, FareService.payableFare, TripService.complete |
++| Panel C-028 | How much does the locked-account page suggest topping up? | What is owed, plus MIN_BALANCE_TO_RIDE_CENTS ($2.00) so the rider can book again, minus what is already available; at least TOP_UP_MIN_CENTS. The page also says the smaller amount that only unlocks. | client LockedAccountPage (AccountPages.tsx) |
++| Panel N-f1-02 | A rider asked at $2.00 and another rider left before the driver accepted. What fare does Accept hold? | The fare quoted on the request, or the headcount fare if that is lower. Accept never holds more than the rider was shown when they asked (same rule as Panel F2); the driver earns less on that trip. | BookingService.accept (FareService.payableFare) |
++| Panel N-f1-01 | Can one rider hold seats on two journeys at once if both requests are sent at the same moment? | No. Book and Accept lock the rider (their wallet row, always after the journey row) and re-check; an Accept for a rider already confirmed on another live journey is declined automatically. | BookingService.book, BookingService.accept |
+ | SRS Q10 | Live location before pickup? | Only once the trip is in progress. | realtime join check |
+ | SRS Q12 | Geofence parameters? | 200 m margin and two consecutive readings; applies to LIVE, OPEN and FULL. | GeofenceService, config GEOFENCE_GRACE_M |
+ | SRS Q13 | Location stop: 30 s or dismiss? | 30 seconds after completion. | config SHARING_STOP_SECONDS, stop-sharing job |
+ | SRS Q14 | Realtime transport? | WebSocket (Socket.IO). | server/src/realtime |
+ | SRS Q16 | Passenger presets? | No. | schema has DriverPreset only |
++| Fix C-043 | What happens to a journey with confirmed riders that the driver never starts? | 30 minutes after its departure time it is cancelled (reason NOT_STARTED); every hold is released; riders and driver are told. | DEFAULTS.UNSTARTED_TIMEOUT_MIN, Sweeps.cancelUnstarted |
++| Fix C-035 | What happens to a trip that was started and then abandoned (no positions, never completed)? | After 30 minutes with no driver position it is ended as CANCELLED (reason ABANDONED); nobody is charged, not even a rider marked dropped off; every hold is released; riders and driver are told. | DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN, Sweeps.endAbandoned, TripService.abandon |
+ | SRS Q17 | Contact window after a trip ends? | 30 minutes. | DEFAULTS.CONTACT_WINDOW_MIN, TripService.getContact |
++| Test NA-006 | What do the sign-in rate limits count, and per what? | Per e-mail address: 10 failed sign-in, sign-up or code attempts a minute (a success does not count) and 5 code e-mails. Per network address: a loose 100 a minute per endpoint, counted the same way. | DEFAULTS.AUTH_*, server/src/security/index.ts |
+diff --git a/docs/demo-personas.md b/docs/demo-personas.md
+index c86a832..635d7dc 100644
+--- a/docs/demo-personas.md
++++ b/docs/demo-personas.md
+@@ -16,7 +16,7 @@ Run `npm run demo:reset` before every rehearsal and before the real demo. It emp
+ 2. **Go live and match.** Dana: _Go live_ > _Share my location and go live_. In a second browser, Priya: _Request a hop_, from Hall B to Main Gate > _Find a ride_ > _Choose this ride_ > wallet check says _enough_ > _Ask the driver_. Dana's _Requests_ card shows Priya: _Accept_. The seat and the hold are in place.
+ 3. **The trip.** Dana: _Start trip_. In a terminal run `npm run replay-gps -- --url <the address>`: it plays Dana's route; Priya's _Your ride_ screen shows the dot moving and "driver is N m away". Dana: _Picked up_, _Dropped off_, _Complete trip_. Both rate. Priya's wallet drops by $3.00 and Dana's earnings are $3.00 (simulated).
+ 4. **The wallet check, three ways.** As Priya the check is _enough_ and there is no banner. As Sam a yellow _getting low_ banner shows on the wallet and request screens; a $2.00 shared ride can be booked but a $3.00 solo ride says _not enough_. As Wei a red banner says to top up to at least $2.00 and _Find a ride_ is refused; the account is not locked, and one $5.00 top-up fixes it. (Booking on trust is switched off: the whole fare must be in the wallet.)
+-5. **Sharing.** Two riders (Priya and Sam) on one journey: both fares fall from $3.00 to $2.00 when the second is accepted; cancel one and the other goes back to $3.00.
+-6. **Locked account.** Sign in as Lee: the banner on every screen, _What you owe_ $0.70, top up $1.00, the account unlocks by itself.
++5. **Sharing.** Two riders (Priya and Sam) on one journey: both fares fall from $3.00 to $2.00 when the second is accepted; cancel one and the other keeps $2.00 (a confirmed fare never rises again; Dana earns $2.00 for that trip).
++6. **Locked account.** Sign in as Lee: the banner on every screen, _What you owe_ $0.70; the page suggests _Top up $2.70_ (pays the $0.70 and leaves the $2.00 needed to book), the account unlocks by itself. A $1.00 top-up would only unlock it.
+ 
+ `node scripts/ui-smoke.mjs` walks scenes 1 to 3 and 6 by itself in headless Chrome and saves a screenshot of every screen.
+diff --git a/docs/traceability.csv b/docs/traceability.csv
+index 9a066d1..57378b0 100644
+--- a/docs/traceability.csv
++++ b/docs/traceability.csv
+@@ -2,10 +2,10 @@ UC,FR,class,endpoint,screen,test file,task id
+ UC-1,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService,POST /api/auth/register,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts,A2
+ UC-1,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService,POST /api/auth/verify,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts,A2
+ UC-1,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService,POST /api/auth/resend,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts,A2
+-UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService,POST /api/auth/login,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
+-UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService,POST /api/auth/logout,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
+-UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService,GET /api/auth/me,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
+-UC-2,FR 1.5; FR 1.6,AuthController; AuthService; RoleController; RoleService,POST /api/me/active-role,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A6
++UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService; tripRole,POST /api/auth/login,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
++UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService; tripRole,POST /api/auth/logout,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
++UC-2,FR 1.1; FR 1.2; FR 1.3; FR 1.4; FR 1.5; FR 1,AuthController; AuthService; RoleController; RoleService; tripRole,GET /api/auth/me,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A2
++UC-2,FR 1.5; FR 1.6,AuthController; AuthService; RoleController; RoleService; tripRole,POST /api/me/active-role,AuthPages; AuthPages.test,AuthPages.test.tsx; auth.int.test.ts; roles.int.test.ts,A6
+ UC-3,FR 1.5; FR 1.6,AuthService; CatalogController; DriverController; NotificationService; PresetService; RoleController; RoleService,POST /api/me/roles,AccountPages; AccountPages.test; DriverPages.test; DriverSetupPages,AccountPages.test.tsx; DriverPages.test.tsx; journeys.int.test.ts; roles.int.test.ts,A6
+ UC-3,FR 3.1; FR 3.1.1; FR 3.1.2; FR 3.1.3; FR 3.1.4; FR 3.1.6; FR 1.6; FR 3.1.5,AuthService; CatalogController; DriverController; NotificationService; PresetService; RoleController; RoleService,PUT /api/driver/profile,AccountPages; AccountPages.test; DriverPages.test; DriverSetupPages,AccountPages.test.tsx; DriverPages.test.tsx; journeys.int.test.ts; roles.int.test.ts,B1
+ UC-3,FR 3.1; FR 3.1.1; FR 3.1.2; FR 3.1.3; FR 3.1.4; FR 3.1.6; FR 1.6; FR 3.1.5,AuthService; CatalogController; DriverController; NotificationService; PresetService; RoleController; RoleService,GET /api/presets,AccountPages; AccountPages.test; DriverPages.test; DriverSetupPages,AccountPages.test.tsx; DriverPages.test.tsx; journeys.int.test.ts; roles.int.test.ts,B1
+diff --git a/server/prisma/migrations/20261105000000_trip_timeouts/migration.sql b/server/prisma/migrations/20261105000000_trip_timeouts/migration.sql
+new file mode 100644
+index 0000000..72475d5
+--- /dev/null
++++ b/server/prisma/migrations/20261105000000_trip_timeouts/migration.sql
+@@ -0,0 +1,7 @@
++-- C-043 and C-035: the sweeps that end a journey nobody started and a trip the driver abandoned record why.
++ALTER TYPE "CancelReason" ADD VALUE 'NOT_STARTED';
++ALTER TYPE "CancelReason" ADD VALUE 'ABANDONED';
++
++-- C-035: when the server received each driver position (the phone's own timestamp is not trusted for the abandoned-trip timeout).
++ALTER TABLE "LocationUpdate" ADD COLUMN "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
++CREATE INDEX "LocationUpdate_journeyId_receivedAt_idx" ON "LocationUpdate"("journeyId", "receivedAt");
+diff --git a/server/prisma/schema.prisma b/server/prisma/schema.prisma
+index 4d92cbc..3084d06 100644
+--- a/server/prisma/schema.prisma
++++ b/server/prisma/schema.prisma
+@@ -60,6 +60,10 @@ enum CancelReason {
+   DRIVER
+   GEOFENCE
+   EXPIRED
++  /// Set by the sweep: confirmed riders, never started UNSTARTED_TIMEOUT_MIN after departure (C-043).
++  NOT_STARTED
++  /// Set by the sweep: in progress, no driver position for ABANDONED_TRIP_TIMEOUT_MIN (C-035).
++  ABANDONED
+ }
+ 
+ enum HopRequestStatus {
+@@ -274,15 +278,19 @@ model Route {
+ }
+ 
+ model LocationUpdate {
+-  id        String   @id @default(cuid())
+-  journeyId String
+-  journey   Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+-  latitude  Float
+-  longitude Float
+-  accuracyM Float
+-  timestamp DateTime
++  id         String   @id @default(cuid())
++  journeyId  String
++  journey    Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
++  latitude   Float
++  longitude  Float
++  accuracyM  Float
++  /// The phone's own time for the fix.
++  timestamp  DateTime
++  /// When the server received it, by the Clock: the abandoned-trip sweep reads this, never the phone's time (C-035).
++  receivedAt DateTime @default(now())
+ 
+   @@index([journeyId, timestamp])
++  @@index([journeyId, receivedAt])
+ }
+ 
+ // ---------------------------------------------------------------- requests and bookings
+diff --git a/server/src/core/transaction.ts b/server/src/core/transaction.ts
+index 2b251c5..b48d56a 100644
+--- a/server/src/core/transaction.ts
++++ b/server/src/core/transaction.ts
+@@ -33,3 +33,11 @@ export async function lockWallet(tx: Tx, userId: string): Promise<void> {
+ export async function lockBooking(tx: Tx, bookingId: string): Promise<void> {
+   await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+ }
++
++/**
++ * Lock a driver's profile row. Go Live takes it so that two simultaneous go-lives for one driver run one after the other and the
++ * second one sees the journey the first one created (B-NA-001).
++ */
++export async function lockDriver(tx: Tx, driverId: string): Promise<void> {
++  await tx.$queryRaw`SELECT "userId" FROM "DriverProfile" WHERE "userId" = ${driverId} FOR UPDATE`;
++}
+diff --git a/server/src/entities/Journey.ts b/server/src/entities/Journey.ts
+index 356ac3f..36470b0 100644
+--- a/server/src/entities/Journey.ts
++++ b/server/src/entities/Journey.ts
+@@ -5,6 +5,7 @@
+  *   LIVE / OPEN / FULL -> IN_PROGRESS -> COMPLETED
+  *   LIVE / OPEN / FULL -> CANCELLED (DRIVER | GEOFENCE | EXPIRED reason)
+  *   LIVE -> EXPIRED                 no booking confirmed within the window (SRS Q7 default: 15 minutes)
++ *   IN_PROGRESS -> CANCELLED        ONLY `abandon()` (reason ABANDONED, the sweep): no driver position for too long (C-035)
+  *
+  * Every other move throws ILLEGAL_STATE_TRANSITION. The database enforces seats between 0 and 3 as well (migration constraints).
+  */
+@@ -32,7 +33,7 @@ export const JOURNEY_TRANSITIONS: Record<JourneyStatus, readonly JourneyStatus[]
+   LIVE: ['OPEN', 'FULL', 'IN_PROGRESS', 'CANCELLED', 'EXPIRED'],
+   OPEN: ['LIVE', 'FULL', 'IN_PROGRESS', 'CANCELLED'],
+   FULL: ['OPEN', 'IN_PROGRESS', 'CANCELLED'],
+-  IN_PROGRESS: ['COMPLETED'],
++  IN_PROGRESS: ['COMPLETED', 'CANCELLED'], // CANCELLED only through abandon(); cancel() refuses a trip in progress
+   COMPLETED: [],
+   CANCELLED: [],
+   EXPIRED: [],
+@@ -120,10 +121,19 @@ export class Journey {
+ 
+   /** Not allowed once the trip is in progress (UC-5 precondition). */
+   cancel(reason: CancelReason): void {
++    if (this.rec.status === 'IN_PROGRESS' || reason === 'ABANDONED')
++      throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'A trip in progress cannot be cancelled.' });
+     this.move('CANCELLED');
+     this.rec.cancelReason = reason;
+   }
+ 
++  /** The sweep only: a trip in progress with no driver position for ABANDONED_TRIP_TIMEOUT_MIN ends as CANCELLED / ABANDONED (C-035). */
++  abandon(): void {
++    if (this.rec.status !== 'IN_PROGRESS') throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'Only a trip in progress can be abandoned.' });
++    this.move('CANCELLED');
++    this.rec.cancelReason = 'ABANDONED';
++  }
++
+   /** LIVE with no confirmed booking at the deadline. Recorded as EXPIRED, which is also the cancel reason (FR 3.5). */
+   expire(): void {
+     this.move('EXPIRED');
+diff --git a/server/src/entities/entities.test.ts b/server/src/entities/entities.test.ts
+index 8774b55..a57b802 100644
+--- a/server/src/entities/entities.test.ts
++++ b/server/src/entities/entities.test.ts
+@@ -281,6 +281,15 @@ describe('F7b: Journey state machine (A)', () => {
+     expect(b.toRecord()).toMatchObject({ status: 'EXPIRED', cancelReason: 'EXPIRED' });
+   });
+ 
++  it('abandon (C-035): only a trip in progress, recorded as CANCELLED / ABANDONED; cancel() still refuses a trip in progress', () => {
++    const j = Journey.fromRecord(journeyRec({ status: 'IN_PROGRESS' }));
++    j.abandon();
++    expect(j.toRecord()).toMatchObject({ status: 'CANCELLED', cancelReason: 'ABANDONED' });
++    expect(code(() => Journey.fromRecord(journeyRec({ status: 'OPEN' })).abandon())).toBe('ILLEGAL_STATE_TRANSITION');
++    expect(code(() => Journey.fromRecord(journeyRec({ status: 'IN_PROGRESS' })).cancel('NOT_STARTED'))).toBe('ILLEGAL_STATE_TRANSITION');
++    expect(code(() => Journey.fromRecord(journeyRec({ status: 'OPEN' })).cancel('ABANDONED'))).toBe('ILLEGAL_STATE_TRANSITION');
++  });
++
+   it('isOpenForBooking is true only for LIVE or OPEN with a free seat', () => {
+     expect(Journey.fromRecord(journeyRec()).isOpenForBooking()).toBe(true);
+     expect(Journey.fromRecord(journeyRec({ status: 'FULL', seatsAvailable: 0 })).isOpenForBooking()).toBe(false);
+diff --git a/server/src/jobs/index.ts b/server/src/jobs/index.ts
+index cd6511f..f45ae86 100644
+--- a/server/src/jobs/index.ts
++++ b/server/src/jobs/index.ts
+@@ -22,6 +22,8 @@ export function startJobs(ctx: AppContext, logger?: SweepLogger, scheduler: Sche
+     s('purge-sharing', 10_000, () => jobs.purgeSharing()),
+     s('reset-daily-counters', 60_000, () => jobs.resetDailyCounters()),
+     s('retry-pushes', 10_000, () => jobs.retryPushes()),
++    s('cancel-unstarted', 60_000, () => jobs.cancelUnstarted()),
++    s('end-abandoned', 60_000, () => jobs.endAbandoned()),
+   ];
+   return { sweeps, stop: () => sweeps.forEach((x) => x.stop()) };
+ }
+diff --git a/server/src/jobs/sweeps.ts b/server/src/jobs/sweeps.ts
+index 62683f6..697ebc3 100644
+--- a/server/src/jobs/sweeps.ts
++++ b/server/src/jobs/sweeps.ts
+@@ -9,13 +9,18 @@ import { addMs, minutes, sgDate } from '../core/clock';
+ import { LocationService } from '../realtime/LocationService';
+ import { BookingService } from '../services/BookingService';
+ import { GeofenceService } from '../services/GeofenceService';
++import { AppError } from '../errors/AppError';
+ import { HopRequestService } from '../services/HopRequestService';
++import { JourneyService } from '../services/JourneyService';
++import { TripService } from '../services/TripService';
+ 
+ export class Sweeps {
+   private readonly geofence: GeofenceService;
+   private readonly bookings: BookingService;
+   private readonly requests: HopRequestService;
+   private readonly locations: LocationService;
++  private readonly journeys: JourneyService;
++  private readonly trips: TripService;
+   /** Bookings whose No-show window has been announced. In memory is enough: a repeat after a restart only re-enables a button. */
+   private readonly announced = new Set<string>();
+ 
+@@ -27,6 +32,8 @@ export class Sweeps {
+     this.bookings = new BookingService(ctx);
+     this.requests = new HopRequestService(ctx);
+     this.locations = locations ?? new LocationService(ctx);
++    this.journeys = new JourneyService(ctx);
++    this.trips = new TripService(ctx);
+   }
+ 
+   /** (1) LIVE journeys with no confirmed booking past their window become EXPIRED (FR 3.5, UC-4.EX.3). */
+@@ -78,6 +85,42 @@ export class Sweeps {
+     return result.count;
+   }
+ 
++  /**
++   * (7) C-043: a journey with confirmed riders (OPEN or FULL) that the driver has not started UNSTARTED_TIMEOUT_MIN after its
++   * departure time is cancelled with reason NOT_STARTED: the same cancel as the driver's, so every hold is released in one
++   * transaction and the riders and the driver are told. Returns the ids cancelled.
++   */
++  async cancelUnstarted(): Promise<string[]> {
++    const cutoff = addMs(this.ctx.clock.now(), -minutes(DEFAULTS.UNSTARTED_TIMEOUT_MIN));
++    const due = await this.ctx.db().journey.findMany({ where: { status: { in: ['OPEN', 'FULL'] }, departureTime: { lte: cutoff } }, select: { id: true } });
++    const cancelled: string[] = [];
++    for (const { id } of due) {
++      try {
++        await this.journeys.cancel(id, 'NOT_STARTED');
++        cancelled.push(id);
++      } catch (err) {
++        if (err instanceof AppError && err.code === 'ILLEGAL_STATE_TRANSITION') continue; // started or ended in the meantime
++        throw err;
++      }
++    }
++    return cancelled;
++  }
++
++  /**
++   * (8) C-035: a trip IN_PROGRESS that has received no driver position for ABANDONED_TRIP_TIMEOUT_MIN (counted from the last
++   * position the server received, or from the start) ends as ABANDONED: holds released, nobody charged, everyone told.
++   */
++  async endAbandoned(): Promise<string[]> {
++    const cutoff = addMs(this.ctx.clock.now(), -minutes(DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN));
++    const due = await this.ctx.db().journey.findMany({
++      where: { status: 'IN_PROGRESS', startedAt: { lte: cutoff }, locationUpdates: { none: { receivedAt: { gt: cutoff } } } },
++      select: { id: true },
++    });
++    const ended: string[] = [];
++    for (const { id } of due) if (await this.trips.abandon(id, cutoff)) ended.push(id);
++    return ended;
++  }
++
+   /** (6) Push notifications that failed are tried again with back-off (NFR-1.3). */
+   async retryPushes(): Promise<number> {
+     return this.ctx.notifications?.retryDue() ?? 0;
+diff --git a/server/src/realtime/LocationService.ts b/server/src/realtime/LocationService.ts
+index 6f8468b..18634f9 100644
+--- a/server/src/realtime/LocationService.ts
++++ b/server/src/realtime/LocationService.ts
+@@ -64,7 +64,7 @@ export class LocationService {
+     this.lastAt.set(journeyId, now.getTime());
+ 
+     await db.locationUpdate.create({
+-      data: { journeyId, latitude: position.lat, longitude: position.lng, accuracyM: position.accuracyM, timestamp: new Date(position.ts) },
++      data: { journeyId, latitude: position.lat, longitude: position.lng, accuracyM: position.accuracyM, timestamp: new Date(position.ts), receivedAt: now },
+     });
+     this.ctx.realtime?.emitToJourney(journeyId, 'location:update', { journeyId, position });
+ 
+diff --git a/server/src/routes/mount.ts b/server/src/routes/mount.ts
+index c51ce86..284cd0b 100644
+--- a/server/src/routes/mount.ts
++++ b/server/src/routes/mount.ts
+@@ -60,9 +60,9 @@ const limiterCache = new WeakMap<AppContext, ReturnType<typeof createRateLimiter
+ /** Which endpoint names have been mounted on each router, so the ones nobody built yet can answer 501. */
+ export const mountedOn = new WeakMap<Router, Set<string>>();
+ 
+-function limiterFor(ctx: AppContext, name: string, limits?: RateLimits): RequestHandler | undefined {
++function limiterFor(ctx: AppContext, name: string, limits?: RateLimits): RequestHandler[] {
+   const kind = RATE_LIMITED[name];
+-  if (!kind) return undefined;
++  if (!kind) return [];
+   let set = limiterCache.get(ctx);
+   if (!set) {
+     set = createRateLimiters(limits);
+@@ -81,8 +81,7 @@ export function mount<N extends EndpointName>(
+ ): void {
+   const e = ENDPOINTS[name] as Endpoint;
+   const chain: RequestHandler[] = [];
+-  const limiter = limiterFor(ctx, name, limits);
+-  if (limiter) chain.push(limiter);
++  chain.push(...limiterFor(ctx, name, limits));
+   if (e.access !== 'public') chain.push(requireAuth(ctx));
+   if (e.access === 'driver') chain.push(requireRole('DRIVER'));
+   if (e.access === 'passenger') chain.push(requireRole('PASSENGER'));
+diff --git a/server/src/security/index.ts b/server/src/security/index.ts
+index 0e30f6d..593ea8b 100644
+--- a/server/src/security/index.ts
++++ b/server/src/security/index.ts
+@@ -3,14 +3,16 @@
+  *  - helmet: security headers (a content security policy that allows our own scripts, https images for map tiles, and WebSockets);
+  *  - CORS: only the web app's origin, with cookies (NFR-2.3);
+  *  - cookie parsing for the session cookie;
+- *  - rate limits on register, verify, resend and login: the 11th login in a minute is TOO_MANY_REQUESTS (NFR-2.1).
++ *  - rate limits on register, verify, resend and login (NFR-2.1): the 11th FAILED login for one e-mail address in a minute is
++ *    TOO_MANY_REQUESTS. One network address has a much looser ceiling, so a shared campus network does not block correct sign-ins.
+  * Password hashing is bcryptjs in AuthService (NFR-2.2), not here. `npm audit --audit-level=high` runs in CI.
+  */
+ import cookieParser from 'cookie-parser';
+ import cors from 'cors';
+-import type { RequestHandler } from 'express';
++import type { Request, RequestHandler } from 'express';
+ import helmet from 'helmet';
+-import { rateLimit } from 'express-rate-limit';
++import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
++import { DEFAULTS } from '@campus-hop/shared';
+ import type { Config } from '../config/env';
+ import { AppError } from '../errors/AppError';
+ 
+@@ -30,29 +32,64 @@ export function securityMiddleware(config: Pick<Config, 'CLIENT_ORIGIN'>): Reque
+   ];
+ }
+ 
+-/** Attempts allowed per minute per address. */
++/** Attempts allowed per minute for ONE e-mail address (see ONLY_FAILURES for which attempts count), plus the per-address ceiling. */
+ export interface RateLimits {
+   login: number;
+   register: number;
+   verify: number;
+   resend: number;
++  /** The loose ceiling per network address and endpoint: one campus network or demo room is many people, not one. */
++  perAddress: number;
+ }
+ 
+-export const DEFAULT_LIMITS: RateLimits = { login: 10, register: 10, verify: 10, resend: 5 };
++export const DEFAULT_LIMITS: RateLimits = {
++  login: DEFAULTS.AUTH_FAILED_PER_EMAIL_PER_MIN,
++  register: DEFAULTS.AUTH_FAILED_PER_EMAIL_PER_MIN,
++  verify: DEFAULTS.AUTH_FAILED_PER_EMAIL_PER_MIN,
++  resend: DEFAULTS.AUTH_RESEND_PER_EMAIL_PER_MIN,
++  perAddress: DEFAULTS.AUTH_PER_ADDRESS_PER_MIN,
++};
++
++export type LimitedEndpoint = Exclude<keyof RateLimits, 'perAddress'>;
++
++/**
++ * Which attempts count. Sign-in, sign-up and the code check count only the ones that FAIL, so a correct sign-in never uses up an
++ * allowance (B-NA-006). Resend counts every request, because each one sends an e-mail.
++ */
++const ONLY_FAILURES: Record<LimitedEndpoint, boolean> = { login: true, register: true, verify: true, resend: false };
+ 
+-export type LimitedEndpoint = keyof RateLimits;
++/** The e-mail address of an auth request, the same for every spelling (the body is parsed but not validated yet at this point). */
++function emailOf(req: Request): string | null {
++  const raw = (req.body as { ntuEmail?: unknown } | undefined)?.ntuEmail;
++  return typeof raw === 'string' && raw.trim() !== '' ? raw.trim().toLowerCase() : null;
++}
+ 
+-export function createRateLimiters(limits: RateLimits = DEFAULT_LIMITS, windowMs = 60_000): Record<LimitedEndpoint, RequestHandler> {
+-  const make = (limit: number): RequestHandler =>
++const addressKey = (req: Request): string => ipKeyGenerator(req.ip ?? '');
++
++/**
++ * Two limits on each auth endpoint, checked in this order: `limits.perAddress` for one network address, then `limits[endpoint]` for
++ * one e-mail address. A request without an e-mail address counts against its network address under the per-e-mail limit too.
++ */
++export function createRateLimiters(limits: RateLimits = DEFAULT_LIMITS, windowMs = 60_000): Record<LimitedEndpoint, RequestHandler[]> {
++  const make = (limit: number, onlyFailures: boolean, keyGenerator: (req: Request) => string): RequestHandler =>
+     rateLimit({
+       windowMs,
+       limit,
++      keyGenerator,
++      skipSuccessfulRequests: onlyFailures,
+       standardHeaders: 'draft-8',
+       legacyHeaders: false,
+       // Hand the refusal to the central error handler so it has the standard shape and a request id.
+       handler: (_req, _res, next) => next(new AppError('TOO_MANY_REQUESTS')),
+     });
+-  return { login: make(limits.login), register: make(limits.register), verify: make(limits.verify), resend: make(limits.resend) };
++  const both = (endpoint: LimitedEndpoint): RequestHandler[] => [
++    make(limits.perAddress, ONLY_FAILURES[endpoint], addressKey),
++    make(limits[endpoint], ONLY_FAILURES[endpoint], (req) => {
++      const email = emailOf(req);
++      return email ? `email:${email}` : `address:${addressKey(req)}`;
++    }),
++  ];
++  return { login: both('login'), register: both('register'), verify: both('verify'), resend: both('resend') };
+ }
+ 
+ /** Which endpoint names are rate limited, and under which limit. */
+diff --git a/server/src/security/security.test.ts b/server/src/security/security.test.ts
+new file mode 100644
+index 0000000..4b39463
+--- /dev/null
++++ b/server/src/security/security.test.ts
+@@ -0,0 +1,56 @@
++/**
++ * NFR-2.1 and B-NA-006: the auth rate limits count failed attempts per e-mail address, with a looser ceiling per network address.
++ * A tiny app stands in for the auth routes: password "right" signs in (200), anything else is INVALID_CREDENTIALS (401).
++ */
++import express from 'express';
++import request from 'supertest';
++import { describe, expect, it } from 'vitest';
++import { AppError } from '../errors/AppError';
++import { createErrorHandler } from '../middleware/errorHandler';
++import { createRateLimiters, DEFAULT_LIMITS, type RateLimits } from './index';
++
++function makeApp(limits: RateLimits) {
++  const app = express();
++  app.use(express.json());
++  const limiters = createRateLimiters(limits);
++  app.post('/login', ...limiters.login, (req, res, next) => {
++    if ((req.body as { password?: string }).password === 'right') res.status(200).json({ ok: true });
++    else next(new AppError('INVALID_CREDENTIALS'));
++  });
++  app.post('/resend', ...limiters.resend, (_req, res) => void res.status(204).end());
++  app.use(createErrorHandler({ logger: { warn: () => undefined, error: () => undefined } }));
++  return app;
++}
++
++const login = (app: express.Express, ntuEmail: string, password: string) => request(app).post('/login').send({ ntuEmail, password });
++
++describe('B-NA-006: auth rate limits', () => {
++  it('the defaults: 10 failed tries per e-mail, 5 resends per e-mail, 100 per network address', () => {
++    expect(DEFAULT_LIMITS).toEqual({ login: 10, register: 10, verify: 10, resend: 5, perAddress: 100 });
++  });
++
++  it('failed tries for one e-mail stop only that e-mail; another person on the same address signs in', async () => {
++    const app = makeApp({ ...DEFAULT_LIMITS, login: 3 });
++    for (let i = 0; i < 3; i++) expect((await login(app, 'a@e.ntu.edu.sg', 'wrong')).status).toBe(401);
++    expect((await login(app, 'a@e.ntu.edu.sg', 'wrong')).body.code).toBe('TOO_MANY_REQUESTS');
++    expect((await login(app, 'b@e.ntu.edu.sg', 'right')).status).toBe(200);
++  });
++
++  it('successful sign-ins are not counted at all', async () => {
++    const app = makeApp({ ...DEFAULT_LIMITS, login: 3, perAddress: 5 });
++    for (let i = 0; i < 12; i++) expect((await login(app, `u${i % 2}@e.ntu.edu.sg`, 'right')).status).toBe(200);
++  });
++
++  it('the network address has its own, looser ceiling of failed tries across all e-mails', async () => {
++    const app = makeApp({ ...DEFAULT_LIMITS, login: 3, perAddress: 5 });
++    for (let i = 0; i < 5; i++) expect((await login(app, `x${i}@e.ntu.edu.sg`, 'wrong')).status).toBe(401);
++    expect((await login(app, 'y@e.ntu.edu.sg', 'wrong')).body.code).toBe('TOO_MANY_REQUESTS');
++  });
++
++  it('resend counts every request, per e-mail', async () => {
++    const app = makeApp({ ...DEFAULT_LIMITS, resend: 2 });
++    for (let i = 0; i < 2; i++) expect((await request(app).post('/resend').send({ ntuEmail: 'a@e.ntu.edu.sg' })).status).toBe(204);
++    expect((await request(app).post('/resend').send({ ntuEmail: 'a@e.ntu.edu.sg' })).status).toBe(429);
++    expect((await request(app).post('/resend').send({ ntuEmail: 'b@e.ntu.edu.sg' })).status).toBe(204);
++  });
++});
+diff --git a/server/src/services/AuthService.ts b/server/src/services/AuthService.ts
+index 18f7b91..9a7b553 100644
+--- a/server/src/services/AuthService.ts
++++ b/server/src/services/AuthService.ts
+@@ -1,7 +1,8 @@
+ /**
+  * Tasks A2 and A6 (me): registration, e-mail verification, login and "who am I".
+  *
+- * UC-1 Register & Verify NTU Email, UC-2 Login. Exceptions raised: UC-1.EX.1 EMAIL_DOMAIN_NOT_ALLOWED, UC-1.AC.1 EMAIL_TAKEN,
++ * UC-1 Register & Verify NTU Email, UC-2 Login. Exceptions raised: UC-1.EX.1 EMAIL_DOMAIN_NOT_ALLOWED, UC-1.AC.1 EMAIL_TAKEN (a verified
++ * account only: a sign-up for a still-unverified address replaces that pending account and e-mails a fresh code),
+  * UC-1.EX.2 VERIFICATION_CODE_INVALID then CODE_ATTEMPTS_EXCEEDED, UC-2.EX.1 INVALID_CREDENTIALS, FR 1.3 EMAIL_NOT_VERIFIED.
+  *
+  * Rules kept here (NFR-2.1, NFR-2.2, NFR-5.2):
+@@ -20,6 +21,7 @@ import { AppError } from '../errors/AppError';
+ import { User, type UserRecord } from '../entities/User';
+ import { verificationEmail } from '../adapters/email/templates';
+ import { signSession } from '../auth/session';
++import { tripRoles } from './tripRole';
+ 
+ export const NTU_DOMAINS = ['@e.ntu.edu.sg', '@ntu.edu.sg'] as const;
+ const BCRYPT_COST = 10;
+@@ -41,8 +43,23 @@ export class AuthService {
+   async register(body: z.output<typeof Account.RegisterBody>): Promise<{ userId: string }> {
+     if (!AuthService.isNtuEmail(body.ntuEmail)) throw new AppError('EMAIL_DOMAIN_NOT_ALLOWED');
+     const db = this.ctx.db();
+-    if (await db.user.findUnique({ where: { ntuEmail: body.ntuEmail }, select: { id: true } })) throw new AppError('EMAIL_TAKEN');
++    const existing = await db.user.findUnique({ where: { ntuEmail: body.ntuEmail }, select: { id: true, accountStatus: true } });
++    if (existing && existing.accountStatus !== 'PENDING_VERIFICATION') throw new AppError('EMAIL_TAKEN');
+     const passwordHash = await bcrypt.hash(body.password, BCRYPT_COST);
++    const roles = { isDriver: body.role === 'DRIVER' || body.role === 'BOTH', isPassenger: body.role === 'PASSENGER' || body.role === 'BOTH' };
++    if (existing) {
++      // Nobody has proved they own this inbox yet, so an unverified sign-up does not claim the address: a new sign-up replaces
++      // the pending one's details and password, and the fresh code (which voids the old ones) goes to the inbox. Whoever reads
++      // the inbox verifies the details they themselves typed. The update is conditional, so a verify landing in between wins:
++      // once the account is verified, the address is taken.
++      const replaced = await db.user.updateMany({
++        where: { id: existing.id, accountStatus: 'PENDING_VERIFICATION' },
++        data: { name: body.name, phone: body.phone, passwordHash, ...roles, lastActiveRole: null },
++      });
++      if (replaced.count === 0) throw new AppError('EMAIL_TAKEN');
++      await this.issueCode(existing.id, body.ntuEmail);
++      return { userId: existing.id };
++    }
+     const user = await db.user.create({
+       data: {
+         name: body.name,
+@@ -50,8 +67,7 @@ export class AuthService {
+         phone: body.phone,
+         passwordHash,
+         // FR 1.5: the roles held. The vehicle details come later, in Manage Profile (UC-3, task B1).
+-        isDriver: body.role === 'DRIVER' || body.role === 'BOTH',
+-        isPassenger: body.role === 'PASSENGER' || body.role === 'BOTH',
++        ...roles,
+         accountStatus: 'PENDING_VERIFICATION',
+         wallet: { create: {} }, // every user has a wallet (balance 0)
+       },
+@@ -111,7 +127,7 @@ export class AuthService {
+ 
+   /**
+    * UC-2. Returns the signed session and the "me" answer. A user holding one role acts in it; a user holding both acts in the
+-   * remembered one, or none yet (the client shows Choose Role).
++   * role of their current trip if they are on one, else the remembered one, or none yet (the client shows Choose Role).
+    */
+   async login(ntuEmail: string, password: string): Promise<{ token: string; me: Me }> {
+     const user = await this.ctx.db().user.findUnique({ where: { ntuEmail } });
+@@ -120,8 +136,13 @@ export class AuthService {
+     if (user.accountStatus === 'PENDING_VERIFICATION') throw new AppError('EMAIL_NOT_VERIFIED');
+     const entity = User.fromRecord(user as UserRecord);
+     const roles = entity.roles;
+-    const activeRole: ActiveRole | null =
+-      roles.length === 1 ? (roles[0] ?? null) : user.lastActiveRole && roles.includes(user.lastActiveRole) ? user.lastActiveRole : null;
++    const onTripIn = roles.length > 1 ? (await tripRoles(this.ctx.db(), user.id)).filter((r) => roles.includes(r)) : [];
++    // A both-role user on a trip acts in the trip's role (so the live journey or booking is reachable at once), else the remembered one.
++    const remembered = user.lastActiveRole && roles.includes(user.lastActiveRole) ? user.lastActiveRole : null;
++    const activeRole: ActiveRole | null = roles.length === 1 ? (roles[0] ?? null) : onTripIn.length === 1 ? (onTripIn[0] ?? null) : remembered;
++    // Remember it too: requireAuth prefers the stored choice over the token, so a stale stored role would otherwise win.
++    if (roles.length > 1 && activeRole && activeRole !== user.lastActiveRole)
++      await this.ctx.db().user.update({ where: { id: user.id }, data: { lastActiveRole: activeRole } });
+     const token = signSession({ sub: user.id, roles, activeRole, sv: user.sessionVersion }, this.ctx.config, this.ctx.clock);
+     return { token, me: await this.me(user.id, activeRole) };
+   }
+diff --git a/server/src/services/BookingService.ts b/server/src/services/BookingService.ts
+index 73c601e..ebef2e1 100644
+--- a/server/src/services/BookingService.ts
++++ b/server/src/services/BookingService.ts
+@@ -15,7 +15,7 @@
+ import type { BalanceCheck, ErrorCode, Hop } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import type { AppContext } from '../context';
+-import { lockJourney, withTransaction } from '../core/transaction';
++import { lockJourney, lockWallet, withTransaction } from '../core/transaction';
+ import { Booking, type BookingRecord } from '../entities/Booking';
+ import { Journey, type JourneyRecord } from '../entities/Journey';
+ import { AppError } from '../errors/AppError';
+@@ -41,8 +41,12 @@ const DECLINED_FOR_DRIVER: Partial<Record<ErrorCode, string>> = {
+   SEAT_UNAVAILABLE: 'No seat is left on this journey, so the request was declined.',
+   ACCOUNT_LOCKED: "This passenger's account is locked for an unpaid fare, so the request was declined.",
+   INSUFFICIENT_BALANCE: 'This passenger no longer has enough in their wallet, so the request was declined.',
++  CONFLICT: 'This passenger already has a confirmed seat on another journey, so the request was declined.',
+ };
+ 
++/** Journeys a booking still counts as "in progress" on: one such booking per rider at a time. */
++const ACTIVE_JOURNEY_STATUSES = ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] as const;
++
+ export class BookingService {
+   private readonly wallets: WalletService;
+   private readonly fares: FareService;
+@@ -98,8 +102,12 @@ export class BookingService {
+         if (request.status !== 'OPEN') throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'This request is no longer open.' });
+       }
+ 
++      // One booking per rider (N-f1-01): the journey lock above does not serialise one rider booking two DIFFERENT journeys at once,
++      // so lock the rider too. Their wallet row is the rider lock: every path takes it after the journey (accept, settlement), never
++      // before, so the order cannot deadlock. The second of two simultaneous books waits here and then sees the first one's booking.
++      await lockWallet(tx, passengerId);
+       const active = await tx.booking.findFirst({
+-        where: { passengerId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
++        where: { passengerId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: [...ACTIVE_JOURNEY_STATUSES] } } },
+       });
+       if (active) throw new AppError('CONFLICT', { message: 'You already have a booking in progress. Finish or cancel it first.' });
+       // One booking per request is enforced by a unique index. A declined or cancelled booking gives the request back, so detach it:
+@@ -161,8 +169,18 @@ export class BookingService {
+ 
+       const passenger = await tx.user.findUniqueOrThrow({ where: { id: row.passengerId } });
+       if (passenger.accountStatus === 'LOCKED') return autoDecline('ACCOUNT_LOCKED');
++      // Re-check one booking per rider under the rider lock (N-f1-01): a seat confirmed on another journey since this request was
++      // made (or a request that slipped past book's check before the fix) must not be accepted and charged a second time.
++      await lockWallet(tx, row.passengerId);
++      const elsewhere = await tx.booking.findFirst({
++        where: { passengerId: row.passengerId, id: { not: bookingId }, status: 'CONFIRMED', journey: { status: { in: [...ACTIVE_JOURNEY_STATUSES] } } },
++      });
++      if (elsewhere) return autoDecline('CONFLICT');
+       const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: row.passengerId } });
+-      const fare = this.fares.fareForRiders((await this.fares.confirmedRiders(journeyId, tx)) + 1);
++      // The rider asked at the fare quoted on the request (currentFareCents of the PENDING row). If riders left since, the headcount
++      // fare is now higher: keep the quoted fare instead of holding more without asking (N-f1-02, same rule as panel F2: a fare the
++      // rider agreed to never rises; the driver earns less). If riders joined, the lower headcount fare applies.
++      const fare = this.fares.payableFare(this.fares.fareForRiders((await this.fares.confirmedRiders(journeyId, tx)) + 1), row.currentFareCents);
+       const check = trustDecision(wallet.balanceCents - wallet.heldCents, passenger.completedRides, fare, this.ctx.flags.bookOnTrust);
+       if (check === 'NOT_ENOUGH') return autoDecline('INSUFFICIENT_BALANCE'); // the balance dropped since the request (UC-10)
+ 
+diff --git a/server/src/services/FareService.test.ts b/server/src/services/FareService.test.ts
+index e3cad93..9571875 100644
+--- a/server/src/services/FareService.test.ts
++++ b/server/src/services/FareService.test.ts
+@@ -90,4 +90,22 @@ describe('Q1: calculateFare, equivalence classes and boundaries (FR 5.1.1, 5.1.2
+     await service.retier(tx as never, queue as never, 'j1');
+     expect(events).toEqual([]);
+   });
++
++  it('panel F2: retier never RAISES a confirmed fare: the rider left after a cancel keeps 200, its hold is not touched, no event', async () => {
++    const rows = [{ id: 'b1', passengerId: 'p1', currentFareCents: 200, status: 'CONFIRMED', pickupStatus: 'WAITING', createdAt: 1 }];
++    const tx = { booking: { findMany: async () => rows.map((r) => ({ ...r })), update: async () => undefined } };
++    const holds: [string, number][] = [];
++    const service = new FareService({} as never, { adjustHold: async (_tx: unknown, id: string, cents: number) => void holds.push([id, cents]) } as never);
++    const events: unknown[] = [];
++    await service.retier(tx as never, { push: (...e: unknown[]) => void events.push(e) } as never, 'j1');
++    expect(rows[0]!.currentFareCents).toBe(200);
++    expect(holds).toEqual([]);
++    expect(events).toEqual([]);
++  });
++
++  it('panel F2: payableFare is the headcount fare, capped at the fare the rider already has', () => {
++    expect(fares.payableFare(300, 200)).toBe(200); // alone at the end, confirmed at $2.00: pays $2.00
++    expect(fares.payableFare(200, 300)).toBe(200);
++    expect(fares.payableFare(300, 300)).toBe(300);
++  });
+ });
+diff --git a/server/src/services/FareService.ts b/server/src/services/FareService.ts
+index fb3290c..b133c22 100644
+--- a/server/src/services/FareService.ts
++++ b/server/src/services/FareService.ts
+@@ -6,6 +6,11 @@
+  *  - fareIfJoining what a new rider would pay: confirmed + 1 (shown in matches and the wallet check)
+  *  - finalFare     from the riders actually picked up (FR 5.1)
+  *  - retier        after a confirm, a cancel or a no-show: recompute every confirmed rider, adjust their holds, emit FareChanged
++ *  - payableFare   what one rider is charged at the end: the headcount fare, but never more than the fare they already have
++ *
++ * Decision (panel F2 / C-027, DECISIONS "Panel F2"): a confirmed rider's fare can go DOWN when riders join but never back UP when a
++ * rider cancels or is a no-show. A rider who confirmed at $2.00 and has only $2.00 would otherwise be raised to $3.00 without being
++ * asked, run short at the end and be locked. The driver simply earns less on that trip.
+  */
+ import type { AppContext } from '../context';
+ import type { Db, Tx } from '../core/transaction';
+@@ -46,27 +51,33 @@ export class FareService {
+     return this.fareForRiders(riders);
+   }
+ 
++  /** The fare a rider pays for a headcount fare: never above the fare the rider already has (it only falls after confirming). */
++  payableFare(headcountFareCents: number, riderFareCents: number): number {
++    return Math.min(headcountFareCents, riderFareCents);
++  }
++
+   /**
+-   * Recompute the current fare of every confirmed rider after the headcount changed (FR 5.11, UC-21.AC.1). Each hold is moved by
+-   * the difference and a FareChanged event is queued for each rider whose fare moved (FR 8.4). Returns the new per-rider fare, or
+-   * null when nobody is confirmed.
++   * Recompute the current fare of every confirmed rider after the headcount changed (FR 5.11, UC-21.AC.1). A fare only falls: a
++   * rider leaving never raises the others (see the decision above). Each hold is moved by the difference and a FareChanged event
++   * is queued for each rider whose fare moved (FR 8.4). Returns the headcount fare, or null when nobody is confirmed.
+    */
+   async retier(tx: Tx, queue: EventQueue, journeyId: string): Promise<number | null> {
+     const confirmed = await tx.booking.findMany({ where: { journeyId, status: 'CONFIRMED', pickupStatus: { not: 'NO_SHOW' } }, orderBy: { createdAt: 'asc' } });
+     if (confirmed.length === 0) return null;
+     const fare = this.fareForRiders(confirmed.length);
+     for (const b of confirmed) {
+-      if (b.currentFareCents === fare) continue;
+-      await tx.booking.update({ where: { id: b.id }, data: { currentFareCents: fare } });
+-      await this.wallets.adjustHold(tx, b.id, fare);
+-      queue.push('FareChanged', { bookingId: b.id, passengerId: b.passengerId, oldCents: b.currentFareCents, newCents: fare });
++      const next = this.payableFare(fare, b.currentFareCents);
++      if (b.currentFareCents === next) continue;
++      await tx.booking.update({ where: { id: b.id }, data: { currentFareCents: next } });
++      await this.wallets.adjustHold(tx, b.id, next);
++      queue.push('FareChanged', { bookingId: b.id, passengerId: b.passengerId, oldCents: b.currentFareCents, newCents: next });
+     }
+     return fare;
+   }
+ 
+   /**
+    * After a no-show or an unpaid rider, the FINAL fare of the riders who were picked up is recomputed from the new headcount
+-   * (FR 5.1.3). Returns the per-rider final fare, or null when nobody was picked up.
++   * (FR 5.1.3). Returns the headcount fare, or null when nobody was picked up; each rider pays `payableFare` of it.
+    */
+   async finalFareFor(tx: Tx, journeyId: string): Promise<number | null> {
+     const riders = await tx.booking.count({ where: { journeyId, status: { in: ['CONFIRMED', 'COMPLETED'] }, pickupStatus: { in: [...PICKED_UP_STATUSES] } } });
+diff --git a/server/src/services/JourneyService.ts b/server/src/services/JourneyService.ts
+index 5919a86..d1db2bb 100644
+--- a/server/src/services/JourneyService.ts
++++ b/server/src/services/JourneyService.ts
+@@ -13,7 +13,7 @@ import type { CancelReason, Hop } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import type { AppContext } from '../context';
+ import { addMs, minutes } from '../core/clock';
+-import { lockJourney, withTransaction } from '../core/transaction';
++import { type Db, lockDriver, lockJourney, withTransaction } from '../core/transaction';
+ import { Booking, type BookingRecord } from '../entities/Booking';
+ import { Driver, type DriverRecord } from '../entities/Driver';
+ import { capacityFor, Journey, type JourneyRecord } from '../entities/Journey';
+@@ -55,13 +55,8 @@ export class JourneyService {
+     assertOwner(preset.driverId, driverId, 'this preset');
+ 
+     const now = this.ctx.clock.now();
+-    if (Driver.fromRecord(profile as DriverRecord).hasReachedDailyLimit(now)) throw new AppError('DAILY_TRIP_LIMIT_REACHED');
+-    const active = await db.journey.findFirst({ where: { driverId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
+-    if (active) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You already have a journey that is live or in progress.' });
+-    const riding = await db.booking.findFirst({
+-      where: { passengerId: driverId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
+-    });
+-    if (riding) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You have a ride booked as a passenger. Finish or cancel it before you drive.' });
++    // Checked here so a refused go-live never asks Maps, and again under the driver's row lock below (B-NA-001).
++    await this.assertCanGoLive(db, driverId, now);
+ 
+     const departure = this.departureFor(now, preset.scheduleDays, preset.scheduleDepartAt);
+     const route = await this.routes.calculate(
+@@ -71,6 +66,10 @@ export class JourneyService {
+     );
+ 
+     const journeyId = await withTransaction(async (tx) => {
++      // Simultaneous go-lives for one driver queue here; each re-reads the state the previous one committed, so at most one
++      // journey is ever live or in progress per driver (B-NA-001).
++      await lockDriver(tx, driverId);
++      await this.assertCanGoLive(tx, driverId, now);
+       const created = await tx.journey.create({
+         data: {
+           driverId,
+@@ -132,6 +131,19 @@ export class JourneyService {
+ 
+   // ---------------------------------------------------------------- internals
+ 
++  /** UC-4 guards: under two paid trips today (FR 6.4), no journey live or in progress, and no ride booked as a passenger. */
++  private async assertCanGoLive(db: Db, driverId: string, now: Date): Promise<void> {
++    const profile = await db.driverProfile.findUnique({ where: { userId: driverId } });
++    if (!profile) throw new AppError('FORBIDDEN', { message: 'Save your vehicle details before you go live.' });
++    if (Driver.fromRecord(profile as DriverRecord).hasReachedDailyLimit(now)) throw new AppError('DAILY_TRIP_LIMIT_REACHED');
++    const active = await db.journey.findFirst({ where: { driverId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
++    if (active) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You already have a journey that is live or in progress.' });
++    const riding = await db.booking.findFirst({
++      where: { passengerId: driverId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
++    });
++    if (riding) throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You have a ride booked as a passenger. Finish or cancel it before you drive.' });
++  }
++
+   /**
+    * "Now", unless the preset has a schedule for today (Singapore time) whose departure is less than two hours ahead: then that
+    * time, so a driver who goes live at 07:40 for an 08:00 preset shows 08:00 to passengers.
+diff --git a/server/src/services/MatchingService.ts b/server/src/services/MatchingService.ts
+index bb2edea..0742cb6 100644
+--- a/server/src/services/MatchingService.ts
++++ b/server/src/services/MatchingService.ts
+@@ -12,7 +12,7 @@ import type { Prisma } from '@prisma/client';
+ import { DEFAULTS, type Hop, type PickupType } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import type { AppContext } from '../context';
+-import { addMs, minutes } from '../core/clock';
++import { minutes } from '../core/clock';
+ import type { LatLng } from '../core/geo';
+ import { FareTier } from '../entities/FareTier';
+ import { Journey, type JourneyRecord } from '../entities/Journey';
+@@ -20,7 +20,7 @@ import { MatchResultSet, type MatchCandidate, type RankingStrategy } from '../en
+ import { User, type UserRecord } from '../entities/User';
+ import { AppError } from '../errors/AppError';
+ import { assertOwner } from '../middleware/ownership';
+-import { detourFor, fitJourney, progressAlong, ScoreRanking, withinTimeWindow, type PickupChoice, type PickupOption } from './matching';
++import { detourFor, estimatePickupTime, fitJourney, progressAlong, ScoreRanking, withinTimeWindow, type PickupChoice, type PickupOption } from './matching';
+ import { toPickupPoint } from './mappers';
+ import { storedPoints } from './RouteService';
+ 
+@@ -30,6 +30,11 @@ type RequestCard = z.infer<typeof Hop.RequestCard>;
+ const ALL_TYPES: PickupType[] = ['BUS_STOP', 'CARPARK'];
+ /** Candidates examined per query: matching must answer inside 3 seconds (NFR-1.1) and a campus has few live journeys. */
+ const CANDIDATE_CAP = 100;
++/** A booking that still holds the rider: waiting for the driver or confirmed, on a journey that has not ended. */
++const ACTIVE_BOOKING = {
++  status: { in: ['PENDING', 'CONFIRMED'] },
++  journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } },
++} satisfies Prisma.BookingWhereInput;
+ 
+ type PlaceWithPoints = Prisma.CampusLocationGetPayload<{ include: { pickupPoints: true } }>;
+ type JourneyForMatching = Prisma.JourneyGetPayload<{ include: { route: true; preset: true; driver: true } }>;
+@@ -101,6 +106,7 @@ export class MatchingService {
+     );
+     const riders = await this.confirmedCounts(journeys.map((j) => j.id));
+ 
++    const now = this.ctx.clock.now();
+     const candidates: (MatchCandidate & { pickupRow: Prisma.PickupPointGetPayload<object> })[] = [];
+     for (const j of journeys) {
+       if (taken.has(j.id) || !withinTimeWindow(request.requestedTime, j.departureTime)) continue;
+@@ -117,7 +123,7 @@ export class MatchingService {
+         pickupPointId: pickupRow.id,
+         walkDistanceM: pickupRow.walkDistanceM,
+         detourMin: fit.detourMin,
+-        pickupTime: addMs(j.departureTime, Math.round(progressAlong(route, fit.point.position) * j.route!.durationSec * 1000)),
++        pickupTime: estimatePickupTime(j.departureTime, now, progressAlong(route, fit.point.position), j.route!.durationSec),
+         fareCents: FareTier.calculateFare((riders.get(j.id) ?? 0) + 1),
+         pickupRow,
+       });
+@@ -151,7 +157,9 @@ export class MatchingService {
+         status: 'OPEN',
+         expiresAt: { gte: now },
+         passengerId: { not: journey.driverId },
+-        passenger: { accountStatus: 'ACTIVE' },
++        // A rider who already has a pending or confirmed ride is not waiting any more (C-017): they cannot book a second one (the same
++        // rule as BookingService.book), so they are neither offered to other drivers nor told that another driver is live.
++        passenger: { accountStatus: 'ACTIVE', bookings: { none: ACTIVE_BOOKING } },
+         requestedTime: { gte: new Date(journey.departureTime.getTime() - window), lte: new Date(journey.departureTime.getTime() + window) },
+       },
+       include: { from: { include: { pickupPoints: true } }, to: true, passenger: true },
+diff --git a/server/src/services/NotificationService.ts b/server/src/services/NotificationService.ts
+index 850ce85..223a38f 100644
+--- a/server/src/services/NotificationService.ts
++++ b/server/src/services/NotificationService.ts
+@@ -9,7 +9,7 @@
+  * room, then, if the push feature is on and the user wants push, through the PushAdapter. A push that fails is retried with back-off
+  * (1 s, 5 s, 30 s); the record stays. Retries live in memory, so after a restart the user simply finds the notification in the inbox.
+  */
+-import type { NotificationType, Trip } from '@campus-hop/shared';
++import { DEFAULTS, type NotificationType, type Trip } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import type { AppContext } from '../context';
+ import { addMs } from '../core/clock';
+@@ -67,10 +67,29 @@ export class NotificationService {
+       this.notifyUser(e.driverId, 'BOOKING_DECLINED', 'A passenger cancelled their booking on your trip.', `/trips/${e.journeyId}`),
+     );
+     on('JourneyCancelled', async (e) => {
+-      for (const id of e.passengerIds)
+-        await this.notifyUser(id, 'JOURNEY_CANCELLED', 'The driver cancelled this trip. Any money on hold has been released.', `/bookings`);
++      const riderText =
++        e.reason === 'NOT_STARTED'
++          ? 'This trip was cancelled because it was not started in time. Any money on hold has been released.'
++          : e.reason === 'ABANDONED'
++            ? 'This trip was ended because the driver stopped sharing their position. You were not charged and any money on hold has been released.'
++            : 'The driver cancelled this trip. Any money on hold has been released.';
++      for (const id of e.passengerIds) await this.notifyUser(id, 'JOURNEY_CANCELLED', riderText, `/bookings`);
+       if (e.reason === 'GEOFENCE')
+         await this.notifyUser(e.driverId, 'GEOFENCE_CANCELLED', 'Your journey was cancelled because you left the campus before starting.', `/trips`);
++      else if (e.reason === 'NOT_STARTED')
++        await this.notifyUser(
++          e.driverId,
++          'JOURNEY_CANCELLED',
++          `Your journey was cancelled because it was not started within ${DEFAULTS.UNSTARTED_TIMEOUT_MIN} minutes of departure. The money held for your riders was released.`,
++          `/trips`,
++        );
++      else if (e.reason === 'ABANDONED')
++        await this.notifyUser(
++          e.driverId,
++          'JOURNEY_CANCELLED',
++          `Your trip was ended because no position came from your phone for ${DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN} minutes. Nobody was charged.`,
++          `/trips`,
++        );
+     });
+     on('JourneyExpired', (e) => this.notifyUser(e.driverId, 'JOURNEY_EXPIRED', 'Your journey expired: nobody booked in time.', `/trips`));
+     on('FareChanged', (e) =>
+@@ -106,9 +125,14 @@ export class NotificationService {
+     );
+     on('AccountLocked', (e) => this.notifyUser(e.userId, 'ACCOUNT_LOCKED', 'Your account is locked until you top up what you owe.', `/wallet`));
+     on('AccountUnlocked', (e) => this.notifyUser(e.userId, 'ACCOUNT_UNLOCKED', 'Your account is unlocked. You can book again.', `/wallet`));
+-    on('RequestAccepted', (e: DomainEvents['RequestAccepted']) =>
+-      this.notifyUser(e.passengerId, 'REQUEST_ACCEPTED', 'A driver going your way is live. Open your request to book.', `/requests/${e.hopRequestId}`),
+-    );
++    on('RequestAccepted', async (e: DomainEvents['RequestAccepted']) => {
++      // One unread "driver is live" per request (C-020): many drivers going live in a few minutes must not fill the bell with the same
++      // line. Once the rider has read it, a later driver is announced again.
++      const link = `/requests/${e.hopRequestId}`;
++      const unread = await this.ctx.db().notification.findFirst({ where: { userId: e.passengerId, type: 'REQUEST_ACCEPTED', link, isRead: false } });
++      if (unread) return;
++      await this.notifyUser(e.passengerId, 'REQUEST_ACCEPTED', 'A driver going your way is live. Open your request to book.', link);
++    });
+   }
+ 
+   // ---------------------------------------------------------------- creating and delivering
+diff --git a/server/src/services/RoleService.ts b/server/src/services/RoleService.ts
+index e3bf424..02c847f 100644
+--- a/server/src/services/RoleService.ts
++++ b/server/src/services/RoleService.ts
+@@ -4,7 +4,7 @@
+  *  - Roles HELD are set at registration (FR 1.5). The role ACTED IN is the session's activeRole (FR 1.7).
+  *  - Switching is refused mid-trip: as a driver with a journey LIVE, OPEN, FULL or IN_PROGRESS, or as a passenger with a
+  *    CONFIRMED booking on a journey that is OPEN, FULL or IN_PROGRESS (ILLEGAL_STATE_TRANSITION). So a role switch can never
+- *    break a trip in progress (UC-2.EX.2).
++ *    break a trip in progress (UC-2.EX.2). Choosing the role the trip is in is always allowed, so the trip can always be reached.
+  *  - A driver-only user can gain the passenger role. A passenger becomes a driver by saving vehicle details (UC-3, task B1).
+  */
+ import type { ActiveRole, Me } from '@campus-hop/shared';
+@@ -13,6 +13,7 @@ import { AppError } from '../errors/AppError';
+ import { User, type UserRecord } from '../entities/User';
+ import { signSession } from '../auth/session';
+ import { AuthService } from './AuthService';
++import { tripRoles } from './tripRole';
+ 
+ export class RoleService {
+   private readonly auth: AuthService;
+@@ -23,14 +24,7 @@ export class RoleService {
+ 
+   /** True while the user is on a trip in either role. */
+   async isMidTrip(userId: string): Promise<boolean> {
+-    const db = this.ctx.db();
+-    const asDriver = await db.journey.count({ where: { driverId: userId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
+-    if (asDriver > 0) return true;
+-    const asPassenger = await db.booking.count({
+-      // PENDING counts too: the driver may accept it after the switch, and the user would then be riding and driving at once.
+-      where: { passengerId: userId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } },
+-    });
+-    return asPassenger > 0;
++    return (await tripRoles(this.ctx.db(), userId)).length > 0;
+   }
+ 
+   async setActiveRole(userId: string, role: ActiveRole, current: ActiveRole | null): Promise<{ token: string; me: Me }> {
+@@ -38,7 +32,10 @@ export class RoleService {
+     const row = await db.user.findUniqueOrThrow({ where: { id: userId } });
+     const user = User.fromRecord(row as UserRecord);
+     user.chooseActiveRole(role); // FORBIDDEN if the role is not held
+-    if (current !== role && (await this.isMidTrip(userId))) {
++    // Mid-trip, only a switch AWAY from the trip's role is refused. Choosing the trip's own role is always allowed, also when the
++    // session has no role yet (a live driver who added the passenger role and signed in again must still reach the journey).
++    const onTripIn = await tripRoles(db, userId);
++    if (current !== role && onTripIn.length > 0 && !onTripIn.includes(role)) {
+       throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'Finish or cancel your trip first, then switch role.' });
+     }
+     await db.user.update({ where: { id: userId }, data: { lastActiveRole: role } });
+diff --git a/server/src/services/TripService.ts b/server/src/services/TripService.ts
+index f505d15..754c168 100644
+--- a/server/src/services/TripService.ts
++++ b/server/src/services/TripService.ts
+@@ -86,6 +86,7 @@ export class TripService {
+           longitude: body.position.lng,
+           accuracyM: body.position.accuracyM,
+           timestamp: new Date(body.position.ts),
++          receivedAt: now,
+         },
+       });
+ 
+@@ -148,7 +149,7 @@ export class TripService {
+         const journey = Journey.fromRecord(jrow as unknown as JourneyRecord);
+         journey.incrementSeats();
+         await tx.journey.update({ where: { id: journeyId }, data: { seatsAvailable: journey.seatsAvailable } });
+-        await this.fares.retier(tx, queue, journeyId); // FR 5.1.3: the riders left pay by the new headcount
++        await this.fares.retier(tx, queue, journeyId); // FR 5.1.3, capped: the riders left never pay more than they confirmed at (panel F2)
+       }
+       queue.push('PickupStatusChanged', {
+         bookingId,
+@@ -186,11 +187,12 @@ export class TripService {
+ 
+       // Passenger wallets are locked in a fixed order, THEN the driver's, so a settlement and a top-up can never deadlock.
+       for (const b of carried) {
+-        const result = await this.wallets.deduct(tx, b.id, fare!);
++        const owed = this.fares.payableFare(fare!, b.currentFareCents); // never more than the fare the rider confirmed at (panel F2)
++        const result = await this.wallets.deduct(tx, b.id, owed);
+         takenBy.push({ bookingId: b.id, cents: result.takenCents });
+         await tx.booking.update({
+           where: { id: b.id },
+-          data: { status: 'COMPLETED', finalFareCents: fare!, paymentStatus: result.shortfallCents === 0 ? 'PAID' : 'UNPAID' },
++          data: { status: 'COMPLETED', finalFareCents: owed, paymentStatus: result.shortfallCents === 0 ? 'PAID' : 'UNPAID' },
+         });
+         if (result.shortfallCents > 0) unpaid.push({ bookingId: b.id, passengerId: b.passengerId, shortfall: result.shortfallCents });
+         else await tx.user.update({ where: { id: b.passengerId }, data: { completedRides: { increment: 1 } } });
+@@ -223,6 +225,39 @@ export class TripService {
+     return toJourney(row);
+   }
+ 
++  // ---------------------------------------------------------------- abandoned trip (C-035)
++
++  /**
++   * The sweep only. A trip IN_PROGRESS that started at or before `cutoff` and has received no driver position after `cutoff`
++   * ends as CANCELLED / ABANDONED in ONE transaction: every CONFIRMED booking is cancelled and its hold released. Nobody is
++   * charged and the driver is paid nothing, not even for a rider marked dropped off: the driver never completed the trip
++   * (decision in DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN). Returns false, changing nothing, if the trip moved on or a position arrived
++   * in the meantime, so running it twice is harmless.
++   */
++  async abandon(journeyId: string, cutoff: Date): Promise<boolean> {
++    const queue = new EventQueue();
++    const done = await withTransaction(async (tx) => {
++      await lockJourney(tx, journeyId);
++      const jrow = await tx.journey.findUnique({ where: { id: journeyId } });
++      if (!jrow || jrow.status !== 'IN_PROGRESS' || !jrow.startedAt || jrow.startedAt > cutoff) return false;
++      if ((await tx.locationUpdate.count({ where: { journeyId, receivedAt: { gt: cutoff } } })) > 0) return false;
++
++      const journey = Journey.fromRecord(jrow as unknown as JourneyRecord);
++      journey.abandon();
++      const confirmed = await tx.booking.findMany({ where: { journeyId, status: 'CONFIRMED' }, orderBy: { passengerId: 'asc' } });
++      for (const b of confirmed) {
++        await this.wallets.release(tx, b.id); // what is still held goes back; a no-show's hold was released already
++        // Straight to CANCELLED: Booking.cancel() refuses a rider who was picked up, but this trip will never be completed.
++        await tx.booking.update({ where: { id: b.id }, data: { status: 'CANCELLED', heldCents: 0 } });
++      }
++      await tx.journey.update({ where: { id: journeyId }, data: { status: journey.status, cancelReason: 'ABANDONED' } });
++      queue.push('JourneyCancelled', { journeyId, driverId: jrow.driverId, reason: 'ABANDONED', passengerIds: confirmed.map((b) => b.passengerId) });
++      return true;
++    });
++    if (done) await this.ctx.bus.publish(queue);
++    return done;
++  }
++
+   // ---------------------------------------------------------------- UC-15 contact by phone
+ 
+   /**
+diff --git a/server/src/services/matching.test.ts b/server/src/services/matching.test.ts
+index d1fced7..8d48a30 100644
+--- a/server/src/services/matching.test.ts
++++ b/server/src/services/matching.test.ts
+@@ -4,7 +4,7 @@
+  */
+ import { describe, expect, it } from 'vitest';
+ import { MatchResultSet, type MatchCandidate } from '../entities/MatchResultSet';
+-import { bestPickup, detourAllowed, detourFor, progressAlong, ScoreRanking, SoonestFirst, withinTimeWindow } from './matching';
++import { bestPickup, detourAllowed, detourFor, estimatePickupTime, progressAlong, ScoreRanking, SoonestFirst, withinTimeWindow } from './matching';
+ import { trustDecision } from './trust';
+ 
+ const route = [
+@@ -67,6 +67,17 @@ describe('bestPickup', () => {
+   });
+ });
+ 
++describe('estimatePickupTime (C-014: a pickup time is never earlier than now)', () => {
++  const now = new Date('2026-11-05T07:26:00.000Z');
++  it('a departure still ahead: departure plus the share of the drive', () => {
++    expect(estimatePickupTime(new Date('2026-11-05T07:30:00.000Z'), now, 0.5, 600).toISOString()).toBe('2026-11-05T07:35:00.000Z');
++  });
++  it('a departure already passed: the drive counts from now, not from the departure', () => {
++    expect(estimatePickupTime(new Date('2026-11-05T07:15:00.000Z'), now, 0.5, 600).toISOString()).toBe('2026-11-05T07:31:00.000Z');
++    expect(estimatePickupTime(new Date('2026-11-05T07:15:00.000Z'), now, 0, 600).getTime()).toBe(now.getTime());
++  });
++});
++
+ describe('progressAlong', () => {
+   it('0 at the start, about 1 at the end, between for a point in the middle', () => {
+     expect(progressAlong(route, { lat: 1.0, lng: 103.0 })).toBe(0);
+diff --git a/server/src/services/matching.ts b/server/src/services/matching.ts
+index 9e60441..e87e120 100644
+--- a/server/src/services/matching.ts
++++ b/server/src/services/matching.ts
+@@ -87,6 +87,16 @@ export function fitJourney(input: {
+   return bestPickup(input.pickups, input.route, input.allowed, input.toleranceMin);
+ }
+ 
++/**
++ * When the driver reaches a pickup point: the journey's departure plus the share of the drive before that point (C-014).
++ * A journey that is still LIVE or OPEN has not started, so a departure time already passed means the driver leaves now, not then:
++ * the drive is counted from `now`. A pickup time is therefore never earlier than now.
++ */
++export function estimatePickupTime(departureTime: Date, now: Date, progress: number, durationSec: number): Date {
++  const leaves = Math.max(departureTime.getTime(), now.getTime());
++  return new Date(leaves + Math.round(progress * durationSec * 1000));
++}
++
+ /** Share (0 to 1) of the route's length that comes before the point nearest to `p`; used to estimate the pickup time. */
+ export function progressAlong(route: readonly LatLng[], p: LatLng): number {
+   if (route.length < 2) return 0;
+diff --git a/server/src/services/tripRole.ts b/server/src/services/tripRole.ts
+new file mode 100644
+index 0000000..34a1c24
+--- /dev/null
++++ b/server/src/services/tripRole.ts
+@@ -0,0 +1,20 @@
++/**
++ * Task A6: which role a user's current trip is in, if any (UC-2.EX.2).
++ *
++ * A trip as a DRIVER is a journey of theirs that is LIVE, OPEN, FULL or IN_PROGRESS. A trip as a PASSENGER is a PENDING or
++ * CONFIRMED booking of theirs on such a journey (PENDING counts: the driver may still accept it). Used by RoleService (switching
++ * away from a trip is refused, choosing the trip's role is always allowed) and by AuthService.login (sign-in acts in that role).
++ */
++import type { ActiveRole } from '@campus-hop/shared';
++import type { PrismaClient } from '@prisma/client';
++
++const TRIP_JOURNEY_STATUSES = ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] as const;
++
++/** The roles the user is on a trip in right now: [] when none (the other services keep it to one role at a time). */
++export async function tripRoles(db: PrismaClient, userId: string): Promise<ActiveRole[]> {
++  const asDriver = await db.journey.count({ where: { driverId: userId, status: { in: [...TRIP_JOURNEY_STATUSES] } } });
++  const asPassenger = await db.booking.count({
++    where: { passengerId: userId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: [...TRIP_JOURNEY_STATUSES] } } },
++  });
++  return [...(asDriver > 0 ? (['DRIVER'] as const) : []), ...(asPassenger > 0 ? (['PASSENGER'] as const) : [])];
++}
+diff --git a/server/test/auth.int.test.ts b/server/test/auth.int.test.ts
+index bfb34bf..4eab0dc 100644
+--- a/server/test/auth.int.test.ts
++++ b/server/test/auth.int.test.ts
+@@ -43,11 +43,62 @@ describe('UC-1 Register and verify', () => {
+     expect((await register(t, { ntuEmail: 'a2@ntu.edu.sg' })).res.status).toBe(201);
+   });
+ 
+-  it('UC-1.AC.1: a duplicate e-mail is EMAIL_TAKEN', async () => {
++  it('UC-1.AC.1: a duplicate e-mail of a VERIFIED account is EMAIL_TAKEN and changes nothing', async () => {
+     const t = makeTestApp();
+     const first = await register(t);
+-    const second = await register(t, { ntuEmail: first.body.ntuEmail });
++    const code = t.adapters.email.lastCodeFor(first.body.ntuEmail);
++    expect((await request(t.app).post('/api/auth/verify').send({ ntuEmail: first.body.ntuEmail, code })).status).toBe(204);
++    const sentBefore = t.adapters.email.sent.length;
++    const second = await register(t, { ntuEmail: first.body.ntuEmail, name: 'Someone Else', password: 'another-password-1' });
+     expectError(second.res, 'EMAIL_TAKEN');
++    expect(t.adapters.email.sent).toHaveLength(sentBefore);
++    const user = await prisma().user.findUniqueOrThrow({ where: { ntuEmail: first.body.ntuEmail } });
++    expect(user.name).toBe(first.body.name);
++    expect((await request(t.app).post('/api/auth/login').send({ ntuEmail: first.body.ntuEmail, password: first.body.password })).status).toBe(200);
++  });
++
++  // C-004: an unverified sign-up used to claim the address for good (the second sign-up was EMAIL_TAKEN, and the FIRST password owned
++  // the account once anyone entered the code). Nobody has proved they own an unverified address, so a new sign-up replaces it.
++  it('C-004: a sign-up for a still-unverified address replaces its name, phone, password and roles and e-mails a fresh code', async () => {
++    const t = makeTestApp();
++    const first = await register(t, { role: 'DRIVER' });
++    const oldCode = t.adapters.email.lastCodeFor(first.body.ntuEmail)!;
++    const second = await register(t, {
++      ntuEmail: first.body.ntuEmail,
++      name: 'Real Owner',
++      phone: '98887777',
++      password: 'the-real-owners-pw',
++      role: 'PASSENGER',
++    });
++    expect(second.res.status).toBe(201);
++    expect(second.res.body).toEqual({ userId: first.res.body.userId }); // the same pending account, not a second one
++    expect(await prisma().user.count({ where: { ntuEmail: first.body.ntuEmail } })).toBe(1);
++    const user = await prisma().user.findUniqueOrThrow({ where: { ntuEmail: first.body.ntuEmail } });
++    expect(user).toMatchObject({ name: 'Real Owner', phone: '98887777', isDriver: false, isPassenger: true, accountStatus: 'PENDING_VERIFICATION' });
++    expect(await prisma().wallet.count({ where: { userId: user.id } })).toBe(1);
++    const freshCode = t.adapters.email.lastCodeFor(first.body.ntuEmail)!;
++    expect(t.adapters.email.sent.filter((m) => m.to === first.body.ntuEmail)).toHaveLength(2);
++    const verify = (code: string) => request(t.app).post('/api/auth/verify').send({ ntuEmail: first.body.ntuEmail, code });
++    if (oldCode !== freshCode) expectError(await verify(oldCode), 'VERIFICATION_CODE_INVALID'); // the first sign-up's code is void
++    expect((await verify(freshCode)).status).toBe(204);
++    const login = (password: string) => request(t.app).post('/api/auth/login').send({ ntuEmail: first.body.ntuEmail, password });
++    expectError(await login(first.body.password), 'INVALID_CREDENTIALS'); // the first password no longer owns it
++    const ok = await login('the-real-owners-pw');
++    expect(ok.status).toBe(200);
++    expect(ok.body).toMatchObject({ name: 'Real Owner', roles: ['PASSENGER'], activeRole: 'PASSENGER' });
++  });
++
++  it('C-004: a replacing sign-up resets the attempt count (a fresh code), and resend still works afterwards', async () => {
++    const t = makeTestApp();
++    const first = await register(t);
++    const good = t.adapters.email.lastCodeFor(first.body.ntuEmail)!;
++    const wrong = good === '000000' ? '111111' : '000000';
++    const verify = (code: string) => request(t.app).post('/api/auth/verify').send({ ntuEmail: first.body.ntuEmail, code });
++    for (let i = 0; i < 3; i++) await verify(wrong);
++    expectError(await verify(good), 'CODE_ATTEMPTS_EXCEEDED');
++    expect((await register(t, { ntuEmail: first.body.ntuEmail })).res.status).toBe(201);
++    expect((await request(t.app).post('/api/auth/resend').send({ ntuEmail: first.body.ntuEmail })).status).toBe(204);
++    expect((await verify(t.adapters.email.lastCodeFor(first.body.ntuEmail)!)).status).toBe(204);
+   });
+ 
+   it('the e-mail is matched case-insensitively (stored lower case)', async () => {
+@@ -288,6 +339,40 @@ describe('NFR-2.1: rate limits (K11)', () => {
+     expectError(await request(t.app).post('/api/auth/login').send({ ntuEmail: u.ntuEmail, password: 'wrong-wrong' }), 'TOO_MANY_REQUESTS');
+   });
+ 
++  it("someone else's wrong tries from the same address do not block a correct sign-in (B-NA-006)", async () => {
++    const t = makeTestApp();
++    const u = await makeUser();
++    for (let i = 0; i < 11; i++) await request(t.app).post('/api/auth/login').send({ ntuEmail: 'made-up@e.ntu.edu.sg', password: 'wrong-wrong' });
++    expectError(await request(t.app).post('/api/auth/login').send({ ntuEmail: 'made-up@e.ntu.edu.sg', password: 'wrong-wrong' }), 'TOO_MANY_REQUESTS');
++    expect((await request(t.app).post('/api/auth/login').send({ ntuEmail: u.ntuEmail, password: TEST_PASSWORD })).status).toBe(200);
++  });
++
++  it('correct sign-ins do not count: a demo room of 15 students signs in within a minute (B-NA-006)', async () => {
++    const t = makeTestApp();
++    for (let i = 0; i < 15; i++) {
++      const u = await makeUser();
++      expect((await request(t.app).post('/api/auth/login').send({ ntuEmail: u.ntuEmail, password: TEST_PASSWORD })).status).toBe(200);
++    }
++    const same = await makeUser();
++    for (let i = 0; i < 12; i++)
++      expect((await request(t.app).post('/api/auth/login').send({ ntuEmail: same.ntuEmail, password: TEST_PASSWORD })).status).toBe(200);
++  });
++
++  it('the per-e-mail limit counts the address in any spelling', async () => {
++    const t = makeTestApp();
++    const u = await makeUser();
++    for (let i = 0; i < 10; i++)
++      await request(t.app)
++        .post('/api/auth/login')
++        .send({ ntuEmail: i % 2 ? u.ntuEmail.toUpperCase() : u.ntuEmail, password: 'wrong-wrong' });
++    expectError(
++      await request(t.app)
++        .post('/api/auth/login')
++        .send({ ntuEmail: ` ${u.ntuEmail} `, password: 'wrong-wrong' }),
++      'TOO_MANY_REQUESTS',
++    );
++  });
++
+   it('resend allows 5 a minute', async () => {
+     const t = makeTestApp();
+     const u = await makeUser({ accountStatus: 'PENDING_VERIFICATION' });
+diff --git a/server/test/bookings.int.test.ts b/server/test/bookings.int.test.ts
+index 077ef1c..48d4554 100644
+--- a/server/test/bookings.int.test.ts
++++ b/server/test/bookings.int.test.ts
+@@ -228,7 +228,8 @@ describe('C3: accept (UC-10)', () => {
+     expect(changed).toEqual([{ bookingId: ba.id, passengerId: a.id, oldCents: 300, newCents: 200 }]);
+   });
+ 
+-  it('cancelling one of two riders puts the other back to $3.00 with the hold raised, and the seat returns (FULL -> OPEN)', async () => {
++  // Changed for panel F2 / C-027: the rider left keeps the $2.00 they have; it is no longer raised back to $3.00 without asking.
++  it('cancelling one of two riders leaves the other at $2.00 with the same hold (no FareChanged), and the seat returns', async () => {
+     const w = await world({ plan: 'SHARING' });
+     const a = await makePassenger({ balanceCents: 500 });
+     const b = await makePassenger({ balanceCents: 500 });
+@@ -242,10 +243,37 @@ describe('C3: accept (UC-10)', () => {
+     expect(res.status).toBe(200);
+     expect(res.body.status).toBe('CANCELLED');
+     expect(await w.wallet(b.id)).toMatchObject({ heldCents: 0 });
+-    expect(await w.wallet(a.id)).toMatchObject({ heldCents: 300 });
+-    expect((await prisma().booking.findUniqueOrThrow({ where: { id: ba.id } })).currentFareCents).toBe(300);
++    expect(await w.wallet(a.id)).toMatchObject({ heldCents: 200 });
++    expect((await prisma().booking.findUniqueOrThrow({ where: { id: ba.id } })).currentFareCents).toBe(200);
+     expect((await prisma().journey.findUniqueOrThrow({ where: { id: w.journey.id } })).seatsAvailable).toBe(2);
+-    expect(w.events.filter((e) => e.name === 'FareChanged').at(-1)!.payload).toMatchObject({ bookingId: ba.id, oldCents: 200, newCents: 300 });
++    expect(w.events.filter((e) => e.name === 'FareChanged').map((e) => e.payload)).toEqual([
++      { bookingId: ba.id, passengerId: a.id, oldCents: 300, newCents: 200 },
++    ]);
++  });
++
++  it('panel C-027: B confirmed at $2.00 with $2.50; A cancels; the trip ends with B paying $2.00, $0.50 left, no debt, still ACTIVE', async () => {
++    const w = await world({ plan: 'SHARING' });
++    const a = await makePassenger({ balanceCents: 500 });
++    const b = await makePassenger({ balanceCents: 250 });
++    const ba = (await w.book(a)).body;
++    await w.acceptAs(ba.id).expect(200);
++    const bb = (await w.book(b)).body;
++    await w.acceptAs(bb.id).expect(200);
++    await request(w.t.app).post(`/api/bookings/${ba.id}/cancel`).set('Cookie', w.as(a)).expect(200);
++    expect(w.events.filter((e) => e.name === 'FareChanged' && (e.payload as { bookingId: string }).bookingId === bb.id)).toEqual([]);
++
++    const c = w.t.cookieFor(w.driver);
++    const fix = { lat: 1.0, lng: 103.0, accuracyM: 6, ts: w.t.clock.now().toISOString() };
++    await request(w.t.app).post(`/api/journeys/${w.journey.id}/start`).set('Cookie', c).send({ locationPermission: true, position: fix }).expect(200);
++    for (const status of ['PICKED_UP', 'DROPPED_OFF'])
++      await request(w.t.app).post(`/api/bookings/${bb.id}/pickup-status`).set('Cookie', c).send({ status }).expect(200);
++    await request(w.t.app).post(`/api/journeys/${w.journey.id}/complete`).set('Cookie', c).expect(200);
++
++    expect(await w.wallet(b.id)).toMatchObject({ balanceCents: 50, heldCents: 0 });
++    expect(await prisma().booking.findUniqueOrThrow({ where: { id: bb.id } })).toMatchObject({ finalFareCents: 200, paymentStatus: 'PAID' });
++    expect(await prisma().debt.count({ where: { userId: b.id } })).toBe(0);
++    expect((await prisma().user.findUniqueOrThrow({ where: { id: b.id } })).accountStatus).toBe('ACTIVE');
++    expect((await w.wallet(w.driver.id)).balanceCents).toBe(200); // the driver earns less
+   });
+ 
+   // Changed after the fullstack review: on a SOLO journey the only rider leaving means nobody is confirmed, so it goes back to LIVE
+@@ -425,3 +453,95 @@ describe('C3: unanswered requests (job in D4)', () => {
+     expect((await prisma().booking.findUniqueOrThrow({ where: { id: stale.id } })).status).toBe('PENDING');
+   });
+ });
++
++describe('C3: one booking per rider across journeys (panel N-f1-01) and the quoted fare at accept (N-f1-02)', () => {
++  /** The world's journey plus a second driver's journey at the same time. */
++  async function twoJourneys() {
++    const w = await world();
++    const driver2 = await makeDriver();
++    const journey2 = await makeJourney(driver2.id, { plan: 'SHARING', departureTime: w.t.clock.now() });
++    const book2 = (who: { id: string; isDriver: boolean; isPassenger: boolean }) =>
++      request(w.t.app)
++        .post('/api/bookings')
++        .set('Cookie', w.t.cookieFor(who))
++        .send({ journeyId: journey2.id, pickupPointId: w.cat.pickup.hallBBus.id, dropoffPointId: w.cat.pickup.gateBus.id });
++    return { ...w, driver2, journey2, book2 };
++  }
++
++  it('two books by one rider to two different journeys at the same moment: exactly one is created, the other is CONFLICT', async () => {
++    for (let round = 0; round < 5; round++) {
++      const w = await twoJourneys();
++      const p = await makePassenger({ balanceCents: 1000 });
++      const [r1, r2] = await Promise.all([w.book(p), w.book2(p)]);
++      expect([r1.status, r2.status].sort()).toEqual([201, 409]);
++      expectError(r1.status === 409 ? r1 : r2, 'CONFLICT');
++      expect(await prisma().booking.count({ where: { passengerId: p.id } })).toBe(1);
++    }
++  });
++
++  it('accept re-checks: a rider with a seat confirmed elsewhere is auto-declined (CONFLICT) and not charged twice', async () => {
++    const w = await twoJourneys();
++    const p = await makePassenger({ balanceCents: 1000 });
++    // Two PENDING requests, as the race above could leave them before the fix.
++    const b1 = await makeBooking(w.journey.id, p.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id);
++    const b2 = await makeBooking(w.journey2.id, p.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id);
++    await w.acceptAs(b1.id).expect(200);
++    const body = expectError(await w.acceptAs(b2.id, w.driver2), 'CONFLICT');
++    expect(body.message).toBe('This passenger already has a confirmed seat on another journey, so the request was declined.');
++    expect((await prisma().booking.findUniqueOrThrow({ where: { id: b2.id } })).status).toBe('CANCELLED');
++    expect(await w.wallet(p.id)).toMatchObject({ balanceCents: 1000, heldCents: 300 });
++    expect((await prisma().journey.findUniqueOrThrow({ where: { id: w.journey2.id } })).seatsAvailable).toBe(3);
++  });
++
++  it('two drivers accept the same rider at the same moment: exactly one CONFIRMED, one hold', async () => {
++    for (let round = 0; round < 5; round++) {
++      const w = await twoJourneys();
++      const p = await makePassenger({ balanceCents: 1000 });
++      const b1 = await makeBooking(w.journey.id, p.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id);
++      const b2 = await makeBooking(w.journey2.id, p.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id);
++      const [r1, r2] = await Promise.all([w.acceptAs(b1.id), w.acceptAs(b2.id, w.driver2)]);
++      expect([r1.status, r2.status].sort()).toEqual([200, 409]);
++      expect(await prisma().booking.count({ where: { passengerId: p.id, status: 'CONFIRMED' } })).toBe(1);
++      expect(await w.wallet(p.id)).toMatchObject({ balanceCents: 1000, heldCents: 300 });
++    }
++  });
++
++  it('N-f1-02: B asks at $2.00, A cancels before the driver accepts: B is confirmed at the quoted $2.00, not $3.00', async () => {
++    const w = await world();
++    const a = await makePassenger({ balanceCents: 500 });
++    const b = await makePassenger({ balanceCents: 500 });
++    const ba = (await w.book(a)).body;
++    await w.acceptAs(ba.id).expect(200);
++    const bb = (await w.book(b)).body;
++    expect(bb.currentFareCents).toBe(200);
++    await request(w.t.app).post(`/api/bookings/${ba.id}/cancel`).set('Cookie', w.as(a)).expect(200);
++
++    const res = await w.acceptAs(bb.id);
++    expect(res.status).toBe(200);
++    expect(res.body).toMatchObject({ status: 'CONFIRMED', currentFareCents: 200 });
++    expect(await w.wallet(b.id)).toMatchObject({ heldCents: 200 });
++  });
++
++  it('N-f1-02: a rider with exactly the quoted $2.00 is still confirmed after the other rider leaves (no automatic decline)', async () => {
++    const w = await world();
++    const a = await makePassenger({ balanceCents: 500 });
++    const b = await makePassenger({ balanceCents: 200 });
++    const ba = (await w.book(a)).body;
++    await w.acceptAs(ba.id).expect(200);
++    const bb = (await w.book(b)).body;
++    await request(w.t.app).post(`/api/bookings/${ba.id}/cancel`).set('Cookie', w.as(a)).expect(200);
++    expect((await w.acceptAs(bb.id)).body).toMatchObject({ status: 'CONFIRMED', currentFareCents: 200 });
++    expect(await w.wallet(b.id)).toMatchObject({ balanceCents: 200, heldCents: 200 });
++  });
++
++  it('a quote of $3.00 still falls to $2.00 at accept when another rider was confirmed meanwhile', async () => {
++    const w = await world();
++    const a = await makePassenger({ balanceCents: 500 });
++    const b = await makePassenger({ balanceCents: 500 });
++    const ba = (await w.book(a)).body;
++    const bb = (await w.book(b)).body;
++    expect(bb.currentFareCents).toBe(300);
++    await w.acceptAs(ba.id).expect(200);
++    expect((await w.acceptAs(bb.id)).body).toMatchObject({ status: 'CONFIRMED', currentFareCents: 200 });
++  });
++});
+diff --git a/server/test/error-codes.int.test.ts b/server/test/error-codes.int.test.ts
+index 80fe997..a76d8bc 100644
+--- a/server/test/error-codes.int.test.ts
++++ b/server/test/error-codes.int.test.ts
+@@ -32,6 +32,9 @@ const CASES: Partial<Record<ErrorCode, Case>> = {
+   EMAIL_DOMAIN_NOT_ALLOWED: (t) => request(t.app).post('/api/auth/register').send(registerBody('someone@gmail.com')),
+   EMAIL_TAKEN: async (t) => {
+     await request(t.app).post('/api/auth/register').send(registerBody('twice@e.ntu.edu.sg')).expect(201);
++    // Only a VERIFIED account owns its address (C-004): a second sign-up for a still-unverified one replaces it instead.
++    const code = t.adapters.email.lastCodeFor('twice@e.ntu.edu.sg');
++    await request(t.app).post('/api/auth/verify').send({ ntuEmail: 'twice@e.ntu.edu.sg', code }).expect(204);
+     return request(t.app).post('/api/auth/register').send(registerBody('twice@e.ntu.edu.sg'));
+   },
+   VERIFICATION_CODE_INVALID: async (t) => {
+diff --git a/server/test/jobs.int.test.ts b/server/test/jobs.int.test.ts
+index 138fd17..2d303fc 100644
+--- a/server/test/jobs.int.test.ts
++++ b/server/test/jobs.int.test.ts
+@@ -2,8 +2,11 @@
+  * Task D4: the timers. Each sweep is tested at just before and just after its boundary with a FakeClock, is run twice to show it is
+  * idempotent, and a failing sweep must not stop the others. UC-4.EX.3, UC-10.EX.1, FR 3.5, 5.5, 6.7, 7.12.
+  */
++import request from 'supertest';
+ import { describe, expect, it } from 'vitest';
++import { DEFAULTS } from '@campus-hop/shared';
+ import type { Scheduler } from '../src/jobs/runner';
++import { LocationService } from '../src/realtime/LocationService';
+ import { startJobs, Sweeps } from '../src/jobs';
+ import { minutes, sgDate } from '../src/core/clock';
+ import { prisma } from '../src/core/prisma';
+@@ -115,7 +118,7 @@ describe('D4: the daily trip counter resets at midnight Singapore time (FR 6.4)'
+ });
+ 
+ describe('D4: the scheduler', () => {
+-  it('registers six sweeps with their intervals, and a failing sweep does not stop the others', async () => {
++  it('registers eight sweeps with their intervals, and a failing sweep does not stop the others', async () => {
+     const t = makeTestApp();
+     const handlers: { fn: () => void; ms: number }[] = [];
+     const scheduler: Scheduler = { setInterval: (fn, ms) => (handlers.push({ fn, ms }), handlers.length), clearInterval: () => undefined };
+@@ -128,8 +131,10 @@ describe('D4: the scheduler', () => {
+       'purge-sharing',
+       'reset-daily-counters',
+       'retry-pushes',
++      'cancel-unstarted',
++      'end-abandoned',
+     ]);
+-    expect(handlers.map((h) => h.ms)).toEqual([60_000, 60_000, 10_000, 10_000, 60_000, 10_000]);
++    expect(handlers.map((h) => h.ms)).toEqual([60_000, 60_000, 10_000, 10_000, 60_000, 10_000, 60_000, 60_000]);
+ 
+     // make the first one fail, run all
+     t.ctx.db = () => {
+@@ -142,3 +147,148 @@ describe('D4: the scheduler', () => {
+     set.stop();
+   });
+ });
++
++/** A driver, a journey leaving now with `riders` confirmed bookings each holding `fare` from a $10 wallet, and a pending request. */
++async function heldTrip(riders = 1, fare = 300) {
++  const t = makeTestApp();
++  const cat = await makeCatalog();
++  const driver = await makeDriver();
++  const journey = await makeJourney(driver.id, { status: 'OPEN', seatsAvailable: 3 - riders, departureTime: t.clock.now() });
++  const passengers = [];
++  const bookings = [];
++  for (let i = 0; i < riders; i++) {
++    const p = await makePassenger({ balanceCents: 1000, heldCents: fare });
++    passengers.push(p);
++    bookings.push(
++      await makeBooking(journey.id, p.id, cat.pickup.hallABus.id, cat.pickup.gateBus.id, {
++        status: 'CONFIRMED',
++        currentFareCents: fare,
++        heldCents: fare,
++        paymentStatus: 'HELD',
++      }),
++    );
++  }
++  const waiting = await makePassenger({ balanceCents: 500 });
++  const pending = await makeBooking(journey.id, waiting.id, cat.pickup.hallABus.id, cat.pickup.gateBus.id);
++  const wallet = (id: string) => prisma().wallet.findUniqueOrThrow({ where: { userId: id } });
++  const inbox = async (id: string) => (await prisma().notification.findMany({ where: { userId: id } })).map((n) => n.message);
++  return { t, cat, driver, journey, passengers, bookings, waiting, pending, wallet, inbox, jobs: new Sweeps(t.ctx) };
++}
++
++const active = (driverId: string) => prisma().journey.count({ where: { driverId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
++
++describe('C-043: a journey with confirmed riders that is never started', () => {
++  it(`is cancelled ${DEFAULTS.UNSTARTED_TIMEOUT_MIN} min after departure (not a second sooner), holds released, riders and driver told, once`, async () => {
++    const w = await heldTrip(2, 200);
++    w.t.clock.advance(minutes(DEFAULTS.UNSTARTED_TIMEOUT_MIN) - 1000);
++    expect(await w.jobs.cancelUnstarted()).toEqual([]);
++    expect((await w.wallet(w.passengers[0]!.id)).heldCents).toBe(200);
++
++    w.t.clock.advance(1000);
++    expect(await w.jobs.cancelUnstarted()).toEqual([w.journey.id]);
++    expect(await w.jobs.cancelUnstarted()).toEqual([]); // idempotent
++
++    expect(await prisma().journey.findUniqueOrThrow({ where: { id: w.journey.id } })).toMatchObject({ status: 'CANCELLED', cancelReason: 'NOT_STARTED' });
++    for (const [i, p] of w.passengers.entries()) {
++      expect(await w.wallet(p.id)).toMatchObject({ balanceCents: 1000, heldCents: 0 });
++      expect(await prisma().booking.findUniqueOrThrow({ where: { id: w.bookings[i]!.id } })).toMatchObject({ status: 'CANCELLED', heldCents: 0 });
++      expect(await prisma().walletTransaction.count({ where: { walletUserId: p.id, type: 'RELEASE', amountCents: 200 } })).toBe(1);
++      expect(await w.inbox(p.id)).toContain('This trip was cancelled because it was not started in time. Any money on hold has been released.');
++    }
++    expect((await prisma().booking.findUniqueOrThrow({ where: { id: w.pending.id } })).status).toBe('CANCELLED');
++    expect((await w.inbox(w.driver.id)).some((m) => m.startsWith('Your journey was cancelled because it was not started'))).toBe(true);
++    expect(await active(w.driver.id)).toBe(0); // the driver may go live again
++  });
++
++  it('a FULL journey is cancelled too; a started trip, and a LIVE journey with nobody confirmed, are left alone', async () => {
++    const w = await heldTrip(1);
++    await prisma().journey.update({ where: { id: w.journey.id }, data: { status: 'FULL', seatsAvailable: 0 } });
++    const started = await makeJourney((await makeDriver()).id, { status: 'IN_PROGRESS', departureTime: w.t.clock.now() });
++    const live = await makeJourney((await makeDriver()).id, { status: 'LIVE', departureTime: w.t.clock.now() });
++    w.t.clock.advance(minutes(DEFAULTS.UNSTARTED_TIMEOUT_MIN));
++    expect(await w.jobs.cancelUnstarted()).toEqual([w.journey.id]);
++    expect((await prisma().journey.findUniqueOrThrow({ where: { id: started.id } })).status).toBe('IN_PROGRESS');
++    expect((await prisma().journey.findUniqueOrThrow({ where: { id: live.id } })).status).toBe('LIVE'); // the expiry sweep owns it
++  });
++
++  it('a scheduled departure counts from the departure time, not from go-live', async () => {
++    const w = await heldTrip(1);
++    await prisma().journey.update({ where: { id: w.journey.id }, data: { departureTime: new Date(w.t.clock.now().getTime() + minutes(60)) } });
++    w.t.clock.advance(minutes(60 + DEFAULTS.UNSTARTED_TIMEOUT_MIN) - 1000);
++    expect(await w.jobs.cancelUnstarted()).toEqual([]);
++    w.t.clock.advance(1000);
++    expect(await w.jobs.cancelUnstarted()).toEqual([w.journey.id]);
++  });
++});
++
++describe('C-035: a trip that is started and then abandoned', () => {
++  /** Starts the trip through the real route, so the first position is the one Start Trip stores. */
++  async function startedTrip(riders = 1, fare = 300) {
++    const w = await heldTrip(riders, fare);
++    const res = await request(w.t.app)
++      .post(`/api/journeys/${w.journey.id}/start`)
++      .set('Cookie', w.t.cookieFor(w.driver))
++      .send({ locationPermission: true, position: { lat: 1.0, lng: 103.0, accuracyM: 6, ts: w.t.clock.now().toISOString() } });
++    expect(res.status).toBe(200);
++    return w;
++  }
++  const fixAt = (at: Date) => ({ lat: 1.0, lng: 103.0, accuracyM: 6, ts: at.toISOString() });
++
++  it(`with no position since the start, it ends ${DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN} min later: holds released, nobody charged, everyone told, once`, async () => {
++    const w = await startedTrip(1, 300);
++    // The rider still cannot cancel a trip in progress; the sweep is their way out.
++    const cancel = await request(w.t.app).post(`/api/bookings/${w.bookings[0]!.id}/cancel`).set('Cookie', w.t.cookieFor(w.passengers[0]!));
++    expect(cancel.status).toBe(409);
++
++    w.t.clock.advance(minutes(DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN) - 1000);
++    expect(await w.jobs.endAbandoned()).toEqual([]);
++    expect((await w.wallet(w.passengers[0]!.id)).heldCents).toBe(300);
++
++    w.t.clock.advance(1000);
++    expect(await w.jobs.endAbandoned()).toEqual([w.journey.id]);
++    expect(await w.jobs.endAbandoned()).toEqual([]); // idempotent
++
++    expect(await prisma().journey.findUniqueOrThrow({ where: { id: w.journey.id } })).toMatchObject({
++      status: 'CANCELLED',
++      cancelReason: 'ABANDONED',
++      completedAt: null,
++    });
++    expect(await w.wallet(w.passengers[0]!.id)).toMatchObject({ balanceCents: 1000, heldCents: 0 });
++    expect(await w.wallet(w.driver.id)).toMatchObject({ balanceCents: 0 });
++    expect(await prisma().booking.findUniqueOrThrow({ where: { id: w.bookings[0]!.id } })).toMatchObject({ status: 'CANCELLED', heldCents: 0 });
++    expect(await prisma().walletTransaction.count({ where: { walletUserId: w.passengers[0]!.id, type: 'DEDUCT' } })).toBe(0);
++    expect((await prisma().driverProfile.findUniqueOrThrow({ where: { userId: w.driver.id } })).dailyPaidTrips).toBe(0);
++    expect((await w.inbox(w.passengers[0]!.id)).some((m) => m.startsWith('This trip was ended because the driver stopped sharing'))).toBe(true);
++    expect((await w.inbox(w.driver.id)).some((m) => m.startsWith('Your trip was ended because no position came from your phone'))).toBe(true);
++    expect(await active(w.driver.id)).toBe(0); // the driver may go live again
++    // A late position from the old trip is dropped quietly.
++    expect((await new LocationService(w.t.ctx).handleUpdate(w.driver.id, w.journey.id, fixAt(w.t.clock.now()))).accepted).toBe(false);
++  });
++
++  it('counts from the last position the SERVER received, not the phone time; a rider already dropped off is not charged either', async () => {
++    const w = await startedTrip(2, 200);
++    await prisma().booking.update({ where: { id: w.bookings[1]!.id }, data: { pickupStatus: 'DROPPED_OFF' } });
++    w.t.clock.advance(minutes(10));
++    // The phone's clock is an hour behind: the position still counts as received now.
++    const r = await new LocationService(w.t.ctx).handleUpdate(w.driver.id, w.journey.id, fixAt(new Date(w.t.clock.now().getTime() - minutes(60))));
++    expect(r.accepted).toBe(true);
++
++    w.t.clock.advance(minutes(DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN) - 1000);
++    expect(await w.jobs.endAbandoned()).toEqual([]);
++    w.t.clock.advance(1000);
++    expect(await w.jobs.endAbandoned()).toEqual([w.journey.id]);
++    for (const p of w.passengers) expect(await w.wallet(p.id)).toMatchObject({ balanceCents: 1000, heldCents: 0 });
++    expect(await w.wallet(w.driver.id)).toMatchObject({ balanceCents: 0 });
++  });
++
++  it('a trip still sending positions is never ended', async () => {
++    const w = await startedTrip();
++    const locations = new LocationService(w.t.ctx);
++    for (let i = 0; i < 6; i++) {
++      w.t.clock.advance(minutes(10));
++      expect((await locations.handleUpdate(w.driver.id, w.journey.id, fixAt(w.t.clock.now()))).accepted).toBe(true);
++      expect(await w.jobs.endAbandoned()).toEqual([]);
++    }
++    expect((await prisma().journey.findUniqueOrThrow({ where: { id: w.journey.id } })).status).toBe('IN_PROGRESS');
++  });
++});
+diff --git a/server/test/journeys.int.test.ts b/server/test/journeys.int.test.ts
+index 4835ccc..34a117f 100644
+--- a/server/test/journeys.int.test.ts
++++ b/server/test/journeys.int.test.ts
+@@ -269,6 +269,16 @@ describe('B3: go live (UC-4) and B2: the stored route (UC-6)', () => {
+     expectError(await request(u.t.app).post('/api/journeys').set('Cookie', u.cookie).send(u.body), 'EMAIL_NOT_VERIFIED');
+   });
+ 
++  it('five simultaneous go-lives for one driver: exactly one LIVE journey, the others ILLEGAL_STATE_TRANSITION (B-NA-001)', async () => {
++    const { t, body, cookie, d } = await ready();
++    const fire = () => request(t.app).post('/api/journeys').set('Cookie', cookie).send(body);
++    const results = await Promise.all([fire(), fire(), fire(), fire(), fire()]);
++    expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
++    for (const r of results.filter((x) => x.status !== 201)) expectError(r, 'ILLEGAL_STATE_TRANSITION');
++    expect(await prisma().journey.count({ where: { driverId: d.id } })).toBe(1);
++    expect(await prisma().route.count()).toBe(1);
++  });
++
+   it('a user with no vehicle details cannot go live (FR 1.6)', async () => {
+     const t = makeTestApp();
+     const cat = await makeCatalog();
+diff --git a/server/test/matching.int.test.ts b/server/test/matching.int.test.ts
+index e733a79..c317ef4 100644
+--- a/server/test/matching.int.test.ts
++++ b/server/test/matching.int.test.ts
+@@ -176,6 +176,17 @@ describe('B5b: finding journeys for a request (passenger first)', () => {
+     expect(res.body.matches).toEqual([]);
+   });
+ 
++  it('a LIVE journey whose departure time passed 14 minutes ago offers a pickup time from now, never in the past (C-014)', async () => {
++    const w = await world();
++    const now = w.t.clock.now().getTime();
++    await prisma().journey.update({ where: { id: w.journey.id }, data: { departureTime: new Date(now - minutes(14)) } });
++    const [m] = (await w.ask()).body.matches;
++    expect(m.journeyId).toBe(w.journey.id);
++    // Hall B's stop is half-way along the 300 s test route: the driver leaves now and reaches it about 150 s later.
++    expect(new Date(m.pickupTime).getTime()).toBeGreaterThanOrEqual(now);
++    expect(new Date(m.pickupTime).getTime()).toBeLessThanOrEqual(now + 300_000);
++  });
++
+   it('a departure exactly 15 minutes away still matches (boundary)', async () => {
+     const w = await world();
+     await prisma().journey.update({ where: { id: w.journey.id }, data: { departureTime: new Date(w.t.clock.now().getTime() + minutes(15)) } });
+@@ -311,3 +322,54 @@ describe('B5b: finding requests for a journey (driver first)', () => {
+     expect(told).toEqual([{ hopRequestId: expect.any(String), passengerId: waiting.id, journeyId: res.body.id }]);
+   });
+ });
++
++describe('C-017 / C-020: a rider who already asked a driver is not waiting any more', () => {
++  /** A new driver goes live through the route, as in the app; returns the journey id. */
++  async function goLive(t: ReturnType<typeof makeTestApp>, cat: Awaited<ReturnType<typeof makeCatalog>>): Promise<string> {
++    const d = await makeDriver();
++    const preset = await makePreset(d.id, cat.mainGate.id);
++    const res = await request(t.app)
++      .post('/api/journeys')
++      .set('Cookie', t.cookieFor(d))
++      .send({ presetId: preset.id, position: { lat: 1.0, lng: 103.0, accuracyM: 8, ts: t.clock.now().toISOString() }, locationPermission: true });
++    expect(res.status).toBe(201);
++    return res.body.id as string;
++  }
++  const bell = async (passengerId: string) => prisma().notification.findMany({ where: { userId: passengerId, type: 'REQUEST_ACCEPTED' } });
++
++  it.each(['PENDING', 'CONFIRMED'] as const)('with a %s booking on D1, D2 going live neither lists the rider nor tells them (C-017)', async (status) => {
++    const w = await world();
++    const asked = await w.ask().expect(201);
++    await makeBooking(w.journey.id, w.passenger.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id, { status, hopRequestId: asked.body.hopRequest.id });
++    const told: unknown[] = [];
++    w.t.ctx.bus.on('RequestAccepted', (e) => void told.push(e));
++
++    const d2Journey = await goLive(w.t, w.cat);
++    expect(told).toEqual([]);
++    expect(await bell(w.passenger.id)).toEqual([]);
++    const d2 = await prisma().journey.findUniqueOrThrow({ where: { id: d2Journey }, include: { driver: true } });
++    const cards = await request(w.t.app).get(`/api/journeys/${d2Journey}/requests`).set('Cookie', w.t.cookieFor(d2.driver));
++    expect(cards.status).toBe(200);
++    expect(cards.body).toEqual([]);
++  });
++
++  it('once the booking is declined or cancelled the rider is offered again', async () => {
++    const w = await world();
++    await w.ask().expect(201);
++    await makeBooking(w.journey.id, w.passenger.id, w.cat.pickup.hallBBus.id, w.cat.pickup.gateBus.id, { status: 'CANCELLED' });
++    await goLive(w.t, w.cat);
++    expect(await bell(w.passenger.id)).toHaveLength(1);
++  });
++
++  it('many drivers going live leave ONE unread "driver is live" per request; after it is read the next driver is announced (C-020)', async () => {
++    const w = await world();
++    await w.ask().expect(201);
++    for (let i = 0; i < 3; i++) await goLive(w.t, w.cat);
++    const first = await bell(w.passenger.id);
++    expect(first).toHaveLength(1);
++
++    await prisma().notification.update({ where: { id: first[0]!.id }, data: { isRead: true } });
++    await goLive(w.t, w.cat);
++    expect(await bell(w.passenger.id)).toHaveLength(2);
++  });
++});
+diff --git a/server/test/roles.int.test.ts b/server/test/roles.int.test.ts
+index 89d1aff..cd5238a 100644
+--- a/server/test/roles.int.test.ts
++++ b/server/test/roles.int.test.ts
+@@ -16,7 +16,7 @@ import { validate } from '../src/middleware/validate';
+ import { minutes } from '../src/core/clock';
+ import { prisma } from '../src/core/prisma';
+ import { AppError } from '../src/errors/AppError';
+-import { expectError, makeBooking, makeCatalog, makeDriver, makeJourney, makePassenger, makeUser } from './helpers';
++import { expectError, makeBooking, makeCatalog, makeDriver, makeJourney, makePassenger, makeUser, TEST_PASSWORD } from './helpers';
+ import { makeTestApp, type TestApp } from './helpers/app';
+ 
+ /** A small app with one fake route per middleware, so each is tested on its own. */
+@@ -204,6 +204,47 @@ describe('A6: active role', () => {
+     expect((await request(t.app).post('/api/me/active-role').set('Cookie', t.cookieFor(u, 'DRIVER')).send({ role: 'DRIVER' })).status).toBe(200);
+   });
+ 
++  // C-007 / B-NA-012: a live driver who added the passenger role and signed in again had no active role, and choosing DRIVER was
++  // refused as a "switch", so the live journey could not be reached at all.
++  it('C-007: a live driver who adds the passenger role and signs in again acts as DRIVER, and may choose DRIVER; PASSENGER stays refused', async () => {
++    const t = makeTestApp();
++    const d = await makeDriver();
++    const journey = await makeJourney(d.id, { status: 'LIVE' });
++    expect((await request(t.app).post('/api/me/roles').set('Cookie', t.cookieFor(d)).send({ add: 'PASSENGER' })).status).toBe(200);
++
++    const login = await request(t.app).post('/api/auth/login').send({ ntuEmail: d.ntuEmail, password: TEST_PASSWORD });
++    expect(login.status).toBe(200);
++    expect(login.body).toMatchObject({ roles: ['DRIVER', 'PASSENGER'], activeRole: 'DRIVER' }); // sign-in restores the trip's role
++    const cookie = String(login.headers['set-cookie']).split(';')[0]!;
++    const mine = await request(t.app).get('/api/journeys/mine').set('Cookie', cookie); // a driver-only route: the journey is reachable
++    expect(mine.status).toBe(200);
++    expect(mine.body.map((j: { id: string }) => j.id)).toContain(journey.id);
++
++    // Even from a session with no role chosen (an older cookie), choosing the trip's role is allowed; switching away is not.
++    const noRole = t.cookieFor(d, null);
++    expect((await request(t.app).post('/api/me/active-role').set('Cookie', noRole).send({ role: 'DRIVER' })).status).toBe(200);
++    expectError(await request(t.app).post('/api/me/active-role').set('Cookie', noRole).send({ role: 'PASSENGER' }), 'ILLEGAL_STATE_TRANSITION');
++    expectError(
++      await request(t.app).post('/api/me/active-role').set('Cookie', t.cookieFor(d, 'DRIVER')).send({ role: 'PASSENGER' }),
++      'ILLEGAL_STATE_TRANSITION',
++    );
++  });
++
++  it('C-007: a both-role passenger with a booking, signed in with no role chosen, may choose PASSENGER but not DRIVER; sign-in picks PASSENGER', async () => {
++    const t = makeTestApp();
++    const cat = await makeCatalog();
++    const driver = await makeDriver();
++    const u = await makeUser({ isDriver: true, isPassenger: true, lastActiveRole: 'DRIVER' });
++    const journey = await makeJourney(driver.id, { status: 'OPEN', seatsAvailable: 2 });
++    await makeBooking(journey.id, u.id, cat.pickup.hallABus.id, cat.pickup.nieCarpark.id, { status: 'CONFIRMED' });
++    const login = await request(t.app).post('/api/auth/login').send({ ntuEmail: u.ntuEmail, password: TEST_PASSWORD });
++    expect(login.body.activeRole).toBe('PASSENGER'); // the trip's role beats a stale remembered one
++    expect((await prisma().user.findUniqueOrThrow({ where: { id: u.id } })).lastActiveRole).toBe('PASSENGER');
++    const noRole = t.cookieFor(u, null);
++    expectError(await request(t.app).post('/api/me/active-role').set('Cookie', noRole).send({ role: 'DRIVER' }), 'ILLEGAL_STATE_TRANSITION');
++    expect((await request(t.app).post('/api/me/active-role').set('Cookie', noRole).send({ role: 'PASSENGER' })).status).toBe(200);
++  });
++
+   it('adding the passenger role to a driver-only user: roles updated, wallet kept; adding it twice is CONFLICT', async () => {
+     const t = makeTestApp();
+     const d = await makeDriver({ balanceCents: 500 });
+diff --git a/server/test/trips.int.test.ts b/server/test/trips.int.test.ts
+index 502bcd9..1633642 100644
+--- a/server/test/trips.int.test.ts
++++ b/server/test/trips.int.test.ts
+@@ -150,7 +150,8 @@ describe('D1: pickup transitions (UC-13)', () => {
+     expect((await w.mark(id, 'NO_SHOW')).body.pickupStatus).toBe('NO_SHOW');
+   });
+ 
+-  it('NO_SHOW releases the hold, frees the seat and re-tiers the other rider back to $3.00 (FR 6.8, 5.1.3)', async () => {
++  // Changed for panel F2 / C-027: the rider left keeps $2.00 (a confirmed fare never rises); it used to go back to $3.00.
++  it('NO_SHOW releases the hold and frees the seat; the other rider stays at $2.00 with the same hold (FR 6.8, panel F2)', async () => {
+     const w = await trip();
+     await w.start().expect(200);
+     const [a, b] = w.bookings;
+@@ -160,11 +161,9 @@ describe('D1: pickup transitions (UC-13)', () => {
+ 
+     expect((await w.wallet(w.riders[0]!.id)).heldCents).toBe(0);
+     expect((await prisma().journey.findUniqueOrThrow({ where: { id: w.journey.id } })).seatsAvailable).toBe(2);
+-    expect((await prisma().booking.findUniqueOrThrow({ where: { id: b!.id } })).currentFareCents).toBe(300);
+-    expect((await w.wallet(w.riders[1]!.id)).heldCents).toBe(300);
+-    expect(w.events.filter((e) => e.name === 'FareChanged').map((e) => e.payload)).toEqual([
+-      { bookingId: b!.id, passengerId: w.riders[1]!.id, oldCents: 200, newCents: 300 },
+-    ]);
++    expect((await prisma().booking.findUniqueOrThrow({ where: { id: b!.id } })).currentFareCents).toBe(200);
++    expect((await w.wallet(w.riders[1]!.id)).heldCents).toBe(200);
++    expect(w.events.filter((e) => e.name === 'FareChanged')).toEqual([]);
+   });
+ });
+ 
+@@ -221,7 +220,8 @@ describe('D1: complete and settle (UC-14)', () => {
+     expect(await prisma().walletTransaction.count({ where: { type: 'DEDUCT' } })).toBe(1);
+   });
+ 
+-  it('one rider and one no-show: the rider pays the solo fare of $3.00; the no-show pays nothing and gets a fare of 0', async () => {
++  // Changed for panel F2: the rider confirmed at $2.00 pays $2.00, not the solo $3.00; the driver earns less.
++  it('one rider and one no-show: the rider pays the $2.00 they confirmed at; the no-show pays nothing and gets a fare of 0', async () => {
+     const w = await trip();
+     await w.start().expect(200);
+     const [carried, absent] = w.bookings;
+@@ -233,7 +233,7 @@ describe('D1: complete and settle (UC-14)', () => {
+     await w.complete().expect(200);
+     expect(await prisma().booking.findUniqueOrThrow({ where: { id: carried!.id } })).toMatchObject({
+       status: 'COMPLETED',
+-      finalFareCents: 300,
++      finalFareCents: 200,
+       paymentStatus: 'PAID',
+     });
+     expect(await prisma().booking.findUniqueOrThrow({ where: { id: absent!.id } })).toMatchObject({
+@@ -241,9 +241,9 @@ describe('D1: complete and settle (UC-14)', () => {
+       finalFareCents: 0,
+       pickupStatus: 'NO_SHOW',
+     });
+-    expect(await w.wallet(w.riders[0]!.id)).toMatchObject({ balanceCents: 700 });
++    expect(await w.wallet(w.riders[0]!.id)).toMatchObject({ balanceCents: 800 });
+     expect(await w.wallet(w.riders[1]!.id)).toMatchObject({ balanceCents: 1000, heldCents: 0 });
+-    expect(await w.wallet(w.driver.id)).toMatchObject({ balanceCents: 300 });
++    expect(await w.wallet(w.driver.id)).toMatchObject({ balanceCents: 200 });
+   });
+ 
+   it('a trip where nobody was carried completes without counting as a paid trip', async () => {
+@@ -338,6 +338,32 @@ describe('D1: complete and settle (UC-14)', () => {
+   });
+ });
+ 
++describe('D1: a co-rider no-show after pickup (panel N-f1-03)', () => {
++  it('B (exactly $2.00) is picked up, then A is a no-show: B stays at $2.00, pays $2.00, owes nothing and stays ACTIVE', async () => {
++    const w = await trip({ balance: 200, held: 200 });
++    await w.start().expect(200);
++    const [a, b] = w.bookings;
++    const trips = new TripService(w.t.ctx);
++    await trips.systemPickupStatus(a!.id, 'ARRIVED', 5, 10);
++    await trips.systemPickupStatus(b!.id, 'ARRIVED', 5, 10);
++    await w.mark(b!.id, 'PICKED_UP').expect(200);
++    w.t.clock.advance(minutes(3) + 5000);
++    await w.mark(a!.id, 'NO_SHOW').expect(200);
++    expect(w.events.filter((e) => e.name === 'FareChanged')).toEqual([]);
++    expect((await prisma().booking.findUniqueOrThrow({ where: { id: b!.id } })).currentFareCents).toBe(200);
++
++    await w.mark(b!.id, 'DROPPED_OFF').expect(200);
++    await w.complete().expect(200);
++    const riderB = w.riders[1]!.id;
++    expect(await w.wallet(riderB)).toMatchObject({ balanceCents: 0, heldCents: 0 });
++    expect(await prisma().booking.findUniqueOrThrow({ where: { id: b!.id } })).toMatchObject({ finalFareCents: 200, paymentStatus: 'PAID' });
++    expect(await prisma().debt.count({ where: { userId: riderB } })).toBe(0);
++    expect((await prisma().user.findUniqueOrThrow({ where: { id: riderB } })).accountStatus).toBe('ACTIVE');
++    expect(w.events.filter((e) => e.name === 'DebtRecorded' || e.name === 'AccountLocked')).toEqual([]);
++    expect(await w.wallet(w.riders[0]!.id)).toMatchObject({ balanceCents: 200, heldCents: 0 });
++  });
++});
++
+ describe('D1: contact by phone (UC-15 alternative flow AC.2, FR 8.6, 8.7)', () => {
+   const FORBIDDEN_MESSAGE = 'You cannot see contact details for this trip.';
+ 
+diff --git a/shared/src/defaults.ts b/shared/src/defaults.ts
+index b0bc028..41adcd1 100644
+--- a/shared/src/defaults.ts
++++ b/shared/src/defaults.ts
+@@ -27,10 +27,28 @@ export const DEFAULTS = {
+   APPROACHING_M: 300,
+   /** Inside this distance of the pickup point the driver counts as ARRIVED (FR 7.8). */
+   ARRIVED_M: 30,
++  /**
++   * N-f3-02: an ARRIVED driver whose fresh, accurate fix is farther than this from the pickup has moved away, and the rider's
++   * screen says so with the distance instead of "Your driver has arrived." Well beyond ARRIVED_M plus the error a counted fix may
++   * have (LOW_ACCURACY_M), so GPS jitter at the stop does not flip it. Screen only: the pickup status stays ARRIVED (the no-show
++   * wait has started and the server's statuses only move forward).
++   */
++  LEFT_PICKUP_M: 100,
+   MATCH_TIME_TOLERANCE_MIN: 15, // SRS Q8
+   MAX_WALK_M: 400,
+   AVG_SPEED_KMH: 20,
+   MAX_PRESETS_PER_DRIVER: 5,
++  /**
++   * A journey with confirmed riders that the driver has not started this many minutes after its departure time is cancelled by
++   * the sweep, every hold is released and everyone is told (C-043). Before this, the riders' money stayed held for ever.
++   */
++  UNSTARTED_TIMEOUT_MIN: 30,
++  /**
++   * A trip in progress that has received no driver position for this many minutes (counted from the last position the server
++   * received, or from the start) is ended by the sweep as ABANDONED: nobody is charged, every hold is released, everyone is told
++   * (C-035). Before this, a driver who started and walked away kept the riders' money held and the riders could not cancel.
++   */
++  ABANDONED_TRIP_TIMEOUT_MIN: 30,
+   // ---- live location -----------------------------------------------------------------------------
+   LOCATION_STALE_S: 15,
+   LOW_ACCURACY_M: 50,
+@@ -42,6 +60,13 @@ export const DEFAULTS = {
+   CODE_MAX_ATTEMPTS: 3,
+   SESSION_DAYS: 7,
+   UNVERIFIED_ACCOUNT_DAYS: 7,
++  // ---- sign-in rate limits (B-NA-006) ------------------------------------------------------------
++  /** Failed sign-in, sign-up or code attempts per minute for ONE e-mail address; a successful attempt does not count. */
++  AUTH_FAILED_PER_EMAIL_PER_MIN: 10,
++  /** Code e-mails per minute for one e-mail address (every resend counts, because each one sends an e-mail). */
++  AUTH_RESEND_PER_EMAIL_PER_MIN: 5,
++  /** The loose ceiling per network address and endpoint (failed attempts; every resend): a demo room shares one address. */
++  AUTH_PER_ADDRESS_PER_MIN: 100,
+ } as const;
+ 
+ export interface Decision {
+@@ -132,6 +157,34 @@ export const DECISIONS: readonly Decision[] = [
+     answer: 'Yes, to the shared fare, with a notification.',
+     appliedIn: 'FareService.retier',
+   },
++  {
++    source: 'Panel F2 / C-027',
++    question: "Does a confirmed rider's fare rise again when another rider cancels or is a no-show?",
++    answer:
++      'No. A confirmed fare only falls: the riders left keep the fare they have (at most the fare they confirmed at) and the driver earns less on that trip. Raising it put a $2.00 rider on $3.00 without asking, ran them short and locked the account.',
++    appliedIn: 'FareService.retier, FareService.payableFare, TripService.complete',
++  },
++  {
++    source: 'Panel C-028',
++    question: 'How much does the locked-account page suggest topping up?',
++    answer:
++      'What is owed, plus MIN_BALANCE_TO_RIDE_CENTS ($2.00) so the rider can book again, minus what is already available; at least TOP_UP_MIN_CENTS. The page also says the smaller amount that only unlocks.',
++    appliedIn: 'client LockedAccountPage (AccountPages.tsx)',
++  },
++  {
++    source: 'Panel N-f1-02',
++    question: 'A rider asked at $2.00 and another rider left before the driver accepted. What fare does Accept hold?',
++    answer:
++      'The fare quoted on the request, or the headcount fare if that is lower. Accept never holds more than the rider was shown when they asked (same rule as Panel F2); the driver earns less on that trip.',
++    appliedIn: 'BookingService.accept (FareService.payableFare)',
++  },
++  {
++    source: 'Panel N-f1-01',
++    question: 'Can one rider hold seats on two journeys at once if both requests are sent at the same moment?',
++    answer:
++      'No. Book and Accept lock the rider (their wallet row, always after the journey row) and re-check; an Accept for a rider already confirmed on another live journey is declined automatically.',
++    appliedIn: 'BookingService.book, BookingService.accept',
++  },
+   { source: 'SRS Q10', question: 'Live location before pickup?', answer: 'Only once the trip is in progress.', appliedIn: 'realtime join check' },
+   {
+     source: 'SRS Q12',
+@@ -147,5 +200,25 @@ export const DECISIONS: readonly Decision[] = [
+   },
+   { source: 'SRS Q14', question: 'Realtime transport?', answer: 'WebSocket (Socket.IO).', appliedIn: 'server/src/realtime' },
+   { source: 'SRS Q16', question: 'Passenger presets?', answer: 'No.', appliedIn: 'schema has DriverPreset only' },
++  {
++    source: 'Fix C-043',
++    question: 'What happens to a journey with confirmed riders that the driver never starts?',
++    answer: '30 minutes after its departure time it is cancelled (reason NOT_STARTED); every hold is released; riders and driver are told.',
++    appliedIn: 'DEFAULTS.UNSTARTED_TIMEOUT_MIN, Sweeps.cancelUnstarted',
++  },
++  {
++    source: 'Fix C-035',
++    question: 'What happens to a trip that was started and then abandoned (no positions, never completed)?',
++    answer:
++      'After 30 minutes with no driver position it is ended as CANCELLED (reason ABANDONED); nobody is charged, not even a rider marked dropped off; every hold is released; riders and driver are told.',
++    appliedIn: 'DEFAULTS.ABANDONED_TRIP_TIMEOUT_MIN, Sweeps.endAbandoned, TripService.abandon',
++  },
+   { source: 'SRS Q17', question: 'Contact window after a trip ends?', answer: '30 minutes.', appliedIn: 'DEFAULTS.CONTACT_WINDOW_MIN, TripService.getContact' },
++  {
++    source: 'Test NA-006',
++    question: 'What do the sign-in rate limits count, and per what?',
++    answer:
++      'Per e-mail address: 10 failed sign-in, sign-up or code attempts a minute (a success does not count) and 5 code e-mails. Per network address: a loose 100 a minute per endpoint, counted the same way.',
++    appliedIn: 'DEFAULTS.AUTH_*, server/src/security/index.ts',
++  },
+ ];
+diff --git a/shared/src/enums.ts b/shared/src/enums.ts
+index b2495fd..f30093d 100644
+--- a/shared/src/enums.ts
++++ b/shared/src/enums.ts
+@@ -15,7 +15,8 @@ export const PickupType = z.enum(['BUS_STOP', 'CARPARK']);
+ export const LocationZone = z.enum(['HALLS', 'ACADEMIC', 'GATE']);
+ 
+ export const JourneyStatus = z.enum(['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'EXPIRED']);
+-export const CancelReason = z.enum(['DRIVER', 'GEOFENCE', 'EXPIRED']);
++/** NOT_STARTED and ABANDONED are set only by the sweeps (C-043, C-035): see DEFAULTS.UNSTARTED_TIMEOUT_MIN and ABANDONED_TRIP_TIMEOUT_MIN. */
++export const CancelReason = z.enum(['DRIVER', 'GEOFENCE', 'EXPIRED', 'NOT_STARTED', 'ABANDONED']);
+ export const HopRequestStatus = z.enum(['OPEN', 'MATCHED', 'EXPIRED', 'CANCELLED']);
+ 
+ export const BookingStatus = z.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED']);

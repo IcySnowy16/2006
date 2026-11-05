@@ -1,0 +1,1521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campus Hop Test Status</title>
+<style>
+  :root { color-scheme: light; --color-fg:#1c2230; --color-fg-muted:#5b6578; --color-bg:#f6f7fa; --color-panel:#ffffff; --color-border-line:#dde1e8; --color-ok:#1d7a3d; --color-warn:#8a6100; --color-bad:#b3261e;
+    --font-anthropic-sans: system-ui, -apple-system, 'Segoe UI', sans-serif; --font-anthropic-serif: Georgia, 'Times New Roman', serif;
+    --cds-font-size-caption:.8125rem; --cds-font-size-body:.9375rem; --cds-font-size-heading:1.0625rem; --cds-font-size-title:1.75rem; --cds-font-weight-medium:600;
+    --cds-gap-xs:4px; --cds-gap-sm:8px; --cds-gap-md:12px; --cds-gap-lg:16px; --cds-gap-xl:24px; --cds-pad-xs:4px; --cds-pad-sm:8px; --cds-pad-md:12px; --cds-pad-lg:16px; --cds-radius:8px; --cds-dur-slow:.3s; }
+  @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --color-fg:#e6e9ef; --color-fg-muted:#a0a8b8; --color-bg:#12151b; --color-panel:#1b1f27; --color-border-line:#2e3440; --color-ok:#6fd38f; --color-warn:#e8c35a; --color-bad:#ff8a80; } }
+  body { margin:0; background:var(--color-bg); color:var(--color-fg); }
+  #dash-root { max-width: 1100px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); }
+</style>
+</head>
+<body>
+<script type="application/json" id="status-data">{
+ "runs": [
+  {
+   "run": "Panel (12 agents)",
+   "at": "2026-11-05T01:00:00+08:00",
+   "state": "Done",
+   "commit": "6f5050e",
+   "pass": 37,
+   "fail": 79,
+   "skip": 4,
+   "tie": 1,
+   "fixed": 0,
+   "newly_failing": 0,
+   "demo_ready": "Yes after fixes (8/8)",
+   "note": "4 testers + 8 judges, 121 cases"
+  },
+  {
+   "run": "Re-run 3:30am",
+   "at": "2026-11-05T03:30:00+08:00",
+   "state": "Done",
+   "commit": "6f5050e",
+   "pass": 37,
+   "fail": 79,
+   "skip": 4,
+   "tie": 1,
+   "fixed": 0,
+   "newly_failing": 0,
+   "demo_ready": "Yes after fixes (unchanged)",
+   "note": "No app change on main. All 11 must-fix items still fail. Container restarted at ~3:25am; watchdog recovered it."
+  },
+  {
+   "run": "Re-run 5:30am",
+   "at": "2026-11-05T05:30:00+08:00",
+   "state": "Done",
+   "commit": "6f5050e",
+   "pass": 37,
+   "fail": 79,
+   "skip": 4,
+   "tie": 1,
+   "fixed": 0,
+   "newly_failing": 0,
+   "demo_ready": "Yes after fixes (unchanged)",
+   "note": "No app change on main. All 11 must-fix items still fail; the go-live race made 3 journeys this time. Container restarted again before the run."
+  },
+  {
+   "run": "Re-run 7:30am",
+   "at": "2026-11-05T07:30:00+08:00",
+   "state": "Done",
+   "commit": "6f5050e",
+   "pass": 37,
+   "fail": 79,
+   "skip": 4,
+   "tie": 1,
+   "fixed": 0,
+   "newly_failing": 0,
+   "demo_ready": "Yes after fixes (unchanged)",
+   "note": "Morning summary: no fixes reached main overnight; all 11 must-fix items still open. Fix first: frozen rider map, the $2-to-$3 lock, the \"journey not found\" flash."
+  },
+  {
+   "run": "Fixes round 1",
+   "at": "2026-11-05T08:56:00+08:00",
+   "state": "Done",
+   "commit": "d707cc7 (local, saved as patches)",
+   "pass": 37,
+   "fail": 79,
+   "skip": 4,
+   "tie": 1,
+   "fixed": 10,
+   "newly_failing": 0,
+   "demo_ready": "Yes after fixes (fixes written, awaiting panel)",
+   "note": "7 fixers fixed 10 of 11 must-fix items + 12 of 22 new finds; combined code passes unit 351, db 394, lint, typecheck. Case counts are the 7:30am ones: the 121 cases are re-counted by the 12-agent panel."
+  },
+  {
+   "run": "12-agent panel on the fixes",
+   "at": "2026-11-05T10:00:00+08:00",
+   "state": "Scheduled",
+   "commit": "",
+   "pass": null,
+   "fail": null,
+   "skip": null,
+   "tie": null,
+   "fixed": null,
+   "newly_failing": null,
+   "demo_ready": "",
+   "note": "Waiting for the user: after their live feedback."
+  }
+ ],
+ "mustfix": [
+  {
+   "rank": 1,
+   "item": "Live tracking: rider dot never moves, no distance updates, driver map waits for position",
+   "judges": 8,
+   "status": "Fixed (1ec4320 pushed; follow-up 2d96718 awaiting panel)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 2,
+   "item": "Fare goes $2 to $3 when the other rider leaves; remaining rider ends in debt and LOCKED",
+   "judges": 8,
+   "status": "Fixed, awaiting panel (e0b83f0; rule: fare only falls)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 3,
+   "item": "Live driver who adds the passenger role is locked out of the journey",
+   "judges": 7,
+   "status": "Fixed, awaiting panel (6b40e14)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 4,
+   "item": "Holds stuck on trips never started or abandoned (no sweep)",
+   "judges": 6,
+   "status": "Fixed, awaiting panel (e863bb4; 30 min timeouts)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 5,
+   "item": "\"This journey was not found.\" for 3-5 s after Go live",
+   "judges": 5,
+   "status": "Fixed (1ec4320, pushed)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 6,
+   "item": "Unverified e-mail can be taken over; no Forgot password",
+   "judges": 5,
+   "status": "Fixed, awaiting panel (6b40e14; owner = whoever verifies)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 7,
+   "item": "Go-live race: several live journeys, 3rd paid trip",
+   "judges": 3,
+   "status": "Fixed, awaiting panel (0b41926)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 8,
+   "item": "Geofence off (CAMPUS_BOUNDARY empty)",
+   "judges": 3,
+   "status": "Not fixed: needs the reviewed campus boundary file",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 9,
+   "item": "Match cards show pick-up times in the past",
+   "judges": 3,
+   "status": "Fixed, awaiting panel (3e7e131)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 10,
+   "item": "Per-IP sign-in rate limit blocks a demo room",
+   "judges": 2,
+   "status": "Fixed, awaiting panel (9d862eb)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  },
+  {
+   "rank": 11,
+   "item": "Waiting riders flooded with driver-live notifications",
+   "judges": 2,
+   "status": "Fixed, awaiting panel (35f806d)",
+   "last_checked": "2026-11-05T09:40:00+08:00 tests on the combined code"
+  }
+ ],
+ "cases": [
+  {
+   "id": "S1",
+   "part": "A",
+   "title": "Install and start",
+   "result": "SKIP",
+   "votes": "0P/0F/8S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "S2",
+   "part": "A",
+   "title": "Health check",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "S3",
+   "part": "A",
+   "title": "Known demo state",
+   "result": "SKIP",
+   "votes": "0P/0F/8S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "S4",
+   "part": "A",
+   "title": "Automated tests",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "A1",
+   "part": "A",
+   "title": "Sign up with a student address",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "A4",
+   "part": "A",
+   "title": "Wrong password",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "A5",
+   "part": "A",
+   "title": "Sign out and back in",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "R1",
+   "part": "A",
+   "title": "Choose and switch role",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "R2",
+   "part": "A",
+   "title": "Role switch while live",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "G1",
+   "part": "A",
+   "title": "Driver goes live",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "G2",
+   "part": "A",
+   "title": "Rider finds the ride",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "G3",
+   "part": "A",
+   "title": "Rider asks, driver accepts",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "G4",
+   "part": "A",
+   "title": "Driver declines",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "T1",
+   "part": "A",
+   "title": "Start, pick up, drop off, complete",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "T2",
+   "part": "A",
+   "title": "Rider map dot",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "T2-02",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "T3",
+   "part": "A",
+   "title": "Payment",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "W1",
+   "part": "A",
+   "title": "Enough balance",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "W2",
+   "part": "A",
+   "title": "Low balance warning",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "W3",
+   "part": "A",
+   "title": "Too low",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "W4",
+   "part": "A",
+   "title": "Top up",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "W6",
+   "part": "A",
+   "title": "Locked account",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "F1",
+   "part": "A",
+   "title": "Two riders share a trip",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "F2",
+   "part": "A",
+   "title": "One rider cancels",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "PQ-N-presenter-14",
+   "changed": "Fix awaiting panel (e0b83f0)"
+  },
+  {
+   "id": "N1",
+   "part": "A",
+   "title": "Notifications",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "N2",
+   "part": "A",
+   "title": "Trip history",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "P1",
+   "part": "A",
+   "title": "Layout at 390 px",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "P3",
+   "part": "A",
+   "title": "Install as an app",
+   "result": "SKIP",
+   "votes": "0P/0F/8S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "Z1",
+   "part": "A",
+   "title": "Anything surprising",
+   "result": "TIE",
+   "votes": "4P/4F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "C-001",
+   "part": "B",
+   "title": "Create an account and verify it with the e-mail code",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-05, T3-17, T1-01, S48",
+   "changed": ""
+  },
+  {
+   "id": "C-004",
+   "part": "B",
+   "title": "Show that a stranger can take a classmate's e-mail address",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "S1, S3, T3-37",
+   "changed": "Fix awaiting panel (6b40e14)"
+  },
+  {
+   "id": "C-055",
+   "part": "B",
+   "title": "Password strength: is there a strength bar, and are weak passwords refused?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "C-002",
+   "part": "B",
+   "title": "Try a wrong e-mail, empty forms and short passwords",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-02, T1-03, C24",
+   "changed": ""
+  },
+  {
+   "id": "C-003",
+   "part": "B",
+   "title": "Wrong, repeated and replaced verification codes",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-16, T1-06, S14",
+   "changed": ""
+  },
+  {
+   "id": "C-005",
+   "part": "B",
+   "title": "Sign out on one window signs the account out everywhere",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T3-18",
+   "changed": ""
+  },
+  {
+   "id": "C-054",
+   "part": "B",
+   "title": "Only @e.ntu.edu.sg may sign up: is @ntu.edu.sg refused?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "",
+   "changed": ""
+  },
+  {
+   "id": "C-007",
+   "part": "B",
+   "title": "A driver who adds the passenger role while live gets locked out",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-21",
+   "changed": "Fix awaiting panel (6b40e14)"
+  },
+  {
+   "id": "C-006",
+   "part": "B",
+   "title": "Choose a role at sign-in and switch it later",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T1-23",
+   "changed": ""
+  },
+  {
+   "id": "C-008",
+   "part": "B",
+   "title": "First preset: vehicle must be saved first and 'Save preset' is greyed",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-15, T1-22, T3-15, T3-14",
+   "changed": ""
+  },
+  {
+   "id": "C-009",
+   "part": "B",
+   "title": "Delete a preset that is in use: where does the refusal show?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-10, C21",
+   "changed": ""
+  },
+  {
+   "id": "C-010",
+   "part": "B",
+   "title": "Unticking 'Bus stops' hides the driver and nobody is told why",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-12",
+   "changed": ""
+  },
+  {
+   "id": "C-011",
+   "part": "B",
+   "title": "Go live from a preset and see the route",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "T1-28, T3-13, T3-34, T51",
+   "changed": "FAIL -> PASS (1ec4320), pending panel"
+  },
+  {
+   "id": "C-012",
+   "part": "B",
+   "title": "Is the campus fence on? Go live from 14 km away",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-01, T2-04, T5, T31",
+   "changed": ""
+  },
+  {
+   "id": "C-013",
+   "part": "B",
+   "title": "Two paid trips a day: the counter and the block",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-14, T3-06, T3-43",
+   "changed": ""
+  },
+  {
+   "id": "C-014",
+   "part": "B",
+   "title": "Rider asks for a ride and sees a matching driver",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-15, T3-11, T1-09, T51, T42",
+   "changed": "Fix awaiting panel (3e7e131)"
+  },
+  {
+   "id": "C-015",
+   "part": "B",
+   "title": "Does the rider ever see the car plate and model?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-02, C52, S44",
+   "changed": ""
+  },
+  {
+   "id": "C-016",
+   "part": "B",
+   "title": "Ask again while a request is open: where is Withdraw?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-18, T3-42, T2-10",
+   "changed": ""
+  },
+  {
+   "id": "C-017",
+   "part": "B",
+   "title": "A second driver sees a rider who already asked someone else",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T18, T33",
+   "changed": "Fix awaiting panel (35f806d)"
+  },
+  {
+   "id": "C-018",
+   "part": "B",
+   "title": "Book a hop and have the driver accept (the two-step flow)",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T3-44, T1-16, T1-09",
+   "changed": ""
+  },
+  {
+   "id": "C-020",
+   "part": "B",
+   "title": "The driver never answers: the rider waits with no countdown",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-20, T37, T3-09",
+   "changed": "Fix awaiting panel (35f806d)"
+  },
+  {
+   "id": "C-019",
+   "part": "B",
+   "title": "A rider with too little money: what does the wall look like?",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T1-10, T3-23",
+   "changed": ""
+  },
+  {
+   "id": "C-021",
+   "part": "B",
+   "title": "When a booking ends without the rider's choice, is a reason shown?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-14, T46, T3-39",
+   "changed": ""
+  },
+  {
+   "id": "C-023",
+   "part": "B",
+   "title": "Rider cancels a confirmed seat: money back and the driver stays live",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T2-23, T3-41, T1-27, M34",
+   "changed": ""
+  },
+  {
+   "id": "C-024",
+   "part": "B",
+   "title": "Rider tries to cancel after the trip started (no way out)",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T2-11, C21",
+   "changed": ""
+  },
+  {
+   "id": "C-022",
+   "part": "B",
+   "title": "Solo journey is full: the second request still has an Accept button",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T53, T2-13",
+   "changed": ""
+  },
+  {
+   "id": "C-025",
+   "part": "B",
+   "title": "The fare drops from $3.00 to $2.00 when a second rider joins",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T2-09",
+   "changed": ""
+  },
+  {
+   "id": "C-027",
+   "part": "B",
+   "title": "Rider B is locked after rider A leaves (the $2 to $3 trap)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-01, M1, M27",
+   "changed": "Fix awaiting panel (e0b83f0)"
+  },
+  {
+   "id": "C-028",
+   "part": "B",
+   "title": "Getting out of a locked account: do the numbers agree?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-06, C55, M3",
+   "changed": "Fix awaiting panel (e0b83f0)"
+  },
+  {
+   "id": "C-026",
+   "part": "B",
+   "title": "The fare note 'it drops if another rider joins' appears when it cannot drop",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-09, T3-39, T2-18",
+   "changed": ""
+  },
+  {
+   "id": "C-029",
+   "part": "B",
+   "title": "Top up and read the wallet history (signs, cap)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-10, T2-08, T3-29, T3-03",
+   "changed": ""
+  },
+  {
+   "id": "C-031",
+   "part": "B",
+   "title": "Does every money screen say it is simulated?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "C43",
+   "changed": ""
+  },
+  {
+   "id": "C-030",
+   "part": "B",
+   "title": "Driver withdraws earnings",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-19, T3-28",
+   "changed": ""
+  },
+  {
+   "id": "C-032",
+   "part": "B",
+   "title": "Start trip: the hidden rules and the location messages",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "C31, T1-13, T2-16",
+   "changed": ""
+  },
+  {
+   "id": "C-033",
+   "part": "B",
+   "title": "Pick up, drop off, complete: the money moves",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T1-26, T3-30",
+   "changed": ""
+  },
+  {
+   "id": "C-035",
+   "part": "B",
+   "title": "The driver starts the trip and disappears",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T2-24, T2",
+   "changed": "Fix awaiting panel (e863bb4)"
+  },
+  {
+   "id": "C-034",
+   "part": "B",
+   "title": "No-show: wait three minutes, then the hold is released",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T3-31, T2-12",
+   "changed": ""
+  },
+  {
+   "id": "C-036",
+   "part": "B",
+   "title": "The rider's map: does the car dot move and is there a route?",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "T2-02, C41, T3-07, C53, T1-12",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "C-037",
+   "part": "B",
+   "title": "'Driver is N m away' and the Arrived messages",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "T2-03, C19",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "C-038",
+   "part": "B",
+   "title": "Driver's own screen says it is waiting for the driver's position",
+   "result": "PASS",
+   "votes": "0P/8F/0S",
+   "known": "T1-16, T3-08, T2-25",
+   "changed": "FAIL -> PASS (1ec4320)"
+  },
+  {
+   "id": "C-039",
+   "part": "B",
+   "title": "Tap each notification: where does it go, and is the bell noisy?",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T26, C1, S45, T1-25",
+   "changed": ""
+  },
+  {
+   "id": "C-040",
+   "part": "B",
+   "title": "Phone numbers: who sees them, when, and for how long",
+   "result": "FAIL",
+   "votes": "3P/5F/0S",
+   "known": "S4, T1-24",
+   "changed": ""
+  },
+  {
+   "id": "C-041",
+   "part": "B",
+   "title": "Rate the driver and the rider; duplicate rating",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T1-17",
+   "changed": ""
+  },
+  {
+   "id": "C-042",
+   "part": "B",
+   "title": "'Trips' list: duplicate cancelled rows, planned time, no other person",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-17, T1-19, T3-30",
+   "changed": ""
+  },
+  {
+   "id": "C-043",
+   "part": "B",
+   "title": "Driver never starts after accepting: is the hold released?",
+   "result": "FAIL",
+   "votes": "0P/7F/1S",
+   "known": "M33, T41, T2-22",
+   "changed": "Fix awaiting panel (e863bb4)"
+  },
+  {
+   "id": "C-044",
+   "part": "B",
+   "title": "A journey nobody books ends after about 15 minutes",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T37, T3-09",
+   "changed": ""
+  },
+  {
+   "id": "C-045",
+   "part": "B",
+   "title": "An open ride request lapses after 15 minutes",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T37",
+   "changed": ""
+  },
+  {
+   "id": "C-046",
+   "part": "B",
+   "title": "Look for help, report and privacy text",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-24, T3-25, T1-11",
+   "changed": ""
+  },
+  {
+   "id": "C-047",
+   "part": "B",
+   "title": "Wrong address and someone else's booking link",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-19, T3-20",
+   "changed": ""
+  },
+  {
+   "id": "C-048",
+   "part": "B",
+   "title": "Look at every screen at phone width (390 and 360 px)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T1-29, T2-17, T3-21, T3-40",
+   "changed": ""
+  },
+  {
+   "id": "C-049",
+   "part": "B",
+   "title": "Try a real phone and the Brave browser",
+   "result": "SKIP",
+   "votes": "0P/0F/8S",
+   "known": "P3, P6, P2",
+   "changed": ""
+  },
+  {
+   "id": "C-050",
+   "part": "B",
+   "title": "Switch the internet off: the offline banner",
+   "result": "FAIL",
+   "votes": "0P/7F/1S",
+   "known": "C4, C3",
+   "changed": ""
+  },
+  {
+   "id": "C-051",
+   "part": "B",
+   "title": "Dry-run the whole demo story with fresh accounts",
+   "result": "PASS",
+   "votes": "5P/3F/0S",
+   "known": "T3-43, T3-44, M27",
+   "changed": ""
+  },
+  {
+   "id": "C-052",
+   "part": "B",
+   "title": "Two screens on a projector: size, map and sessions",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "T3-22, T3-18",
+   "changed": ""
+  },
+  {
+   "id": "C-053",
+   "part": "B",
+   "title": "Seeded demo users: what state do they start in?",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "T2-05, M27",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-012",
+   "part": "C",
+   "title": "A live driver who adds the passenger role is locked out of his own journey after the next sign-in (confirmed on Staging)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-012",
+   "changed": "Fix awaiting panel (6b40e14)"
+  },
+  {
+   "id": "B-NA-001",
+   "part": "C",
+   "title": "Go live three times at once: three live journeys, two trips at the same time, and 3 paid trips in one day (limit is 2)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-001",
+   "changed": "Fix awaiting panel (0b41926)"
+  },
+  {
+   "id": "B-NA-002",
+   "part": "C",
+   "title": "The server books any pick-up and drop-off pair: same place twice, a pick-up type the driver refuses, a drop-off that is not the driver's exit",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-002",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-013",
+   "part": "C",
+   "title": "A preset with a schedule silently makes 'Go live' wait up to 2 hours: riders cannot see the journey, the driver cannot start it, and nothing on screen says so",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-013",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-002",
+   "part": "C",
+   "title": "The rider is still offered 'Cancel booking' after being picked up, the box promises a refund, then the server refuses and the box stays open",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "NB-002",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-018",
+   "part": "C",
+   "title": "A rider who was marked a no-show is not told so on the ride page, is offered a Cancel button that is refused, and cannot book another ride until the driver ends the trip",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-018",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-003",
+   "part": "C",
+   "title": "Top-up accepts any whole number of cents from $1.00 to $100.00 (for example $1.37), not only the five buttons",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-003",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-004",
+   "part": "C",
+   "title": "Two passwords that differ only after the 72nd byte are the same password",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-004",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-005",
+   "part": "C",
+   "title": "A bad web address or a hidden NUL character in a text field gives a 500 'Something went wrong' instead of a normal 400",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-005",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-006",
+   "part": "C",
+   "title": "Ten wrong sign-in tries from one address stop everyone on that address for a minute, including a correct sign-in by another student",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-006",
+   "changed": "Fix awaiting panel (9d862eb)"
+  },
+  {
+   "id": "B-NA-007",
+   "part": "C",
+   "title": "The server stores and broadcasts location fixes of any age or accuracy (a 9-minute-old fix, or a 5,000 m wide circle, reaches the riders)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-007",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-008",
+   "part": "C",
+   "title": "The 'Cancel Booking?' box stays open on a booking the driver already declined, and its button does nothing visible",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-008",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-009",
+   "part": "C",
+   "title": "Driver's trip screen shows 'Stat Limit: 1/2' and 'Passenger: Wes - Seats: 2' for a trip with two riders",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "NA-009",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-010",
+   "part": "C",
+   "title": "Stale taps show developer sentences with raw status words: 'A rider who is ARRIVED cannot become DROPPED_OFF.'",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-010",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-011",
+   "part": "C",
+   "title": "Expiry and the no-show boundary behave as designed on the night app (nothing wrong found); timings seen",
+   "result": "PASS",
+   "votes": "7P/1F/0S",
+   "known": "NA-011",
+   "changed": ""
+  },
+  {
+   "id": "B-NA-014",
+   "part": "C",
+   "title": "After sign-out the open live connection keeps receiving that user's notifications",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NA-014",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-001",
+   "part": "C",
+   "title": "A long name with no spaces pushes the whole page wider than the phone (greeting, profile)",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-001",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-003",
+   "part": "C",
+   "title": "Home says 'We will tell you when a driver going your way goes live' while three matching drivers are already listed",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-003",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-004",
+   "part": "C",
+   "title": "The driver's request list shows riders whose pick-up point type the driver switched off; the rider's own match list leaves that driver out",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "NB-004",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-005",
+   "part": "C",
+   "title": "Editing a preset always un-ticks 'I confirm that I would make this journey anyway', so the first Save fails with a small message",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-005",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-006",
+   "part": "C",
+   "title": "Every screen has the same page title 'Campus Hop'",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-006",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-007",
+   "part": "C",
+   "title": "Status changes on the rider's booking page are not announced to screen readers",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-007",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-008",
+   "part": "C",
+   "title": "When the sign-in ends in the middle of a task the rider is thrown to Login with no message and loses the form",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-008",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-009",
+   "part": "C",
+   "title": "Verify and Send-a-new-code answer differently for unknown e-mails, and any code is accepted for an already verified account",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-009",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-010",
+   "part": "C",
+   "title": "Old or wrong booking links end on a bare line with no heading and no way back; the confirm page blames 'No seats are left' for a finished journey",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-010",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-011",
+   "part": "C",
+   "title": "After the driver accepts, the rider's page does not show when and where to be, only a route line and 'Waiting'",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-011",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-012",
+   "part": "C",
+   "title": "Three in-text links are 20 px tall: 'Top up your wallet', 'Enter your code', 'See its matches'; the first wraps over two lines",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-012",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-013",
+   "part": "C",
+   "title": "Mixed capital letters, raw enum words and three time formats",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-013",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-014",
+   "part": "C",
+   "title": "Re-opening a finished ride from Trips shows empty stars again; a second rating gets 'You have already rated this ride.'",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-014",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-015",
+   "part": "C",
+   "title": "Profile shows name, 'passenger' and 'Active' but not the e-mail or phone number the account uses and shares",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-015",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-016",
+   "part": "C",
+   "title": "Turned sideways (844 x 390) the sticky header and fixed bottom tabs take 115 px of 390",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-016",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-017",
+   "part": "C",
+   "title": "When the driver cancels a confirmed ride the rider's page says only 'Cancelled' and offers only 'Back home'",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-017",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-019",
+   "part": "C",
+   "title": "Every confirmation box has a 'keep' button called 'Abort (Keep)'",
+   "result": "PASS",
+   "votes": "8P/0F/0S",
+   "known": "NB-019",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-020",
+   "part": "C",
+   "title": "Three screens show a button or a green tick for something the server then refuses",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-020",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-021",
+   "part": "C",
+   "title": "Top-up over the $100 wallet limit: the message does not say how much room is left and the too-big buttons stay active",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-021",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-022",
+   "part": "C",
+   "title": "The drop-off drop-down says the place name twice and is cut off on a phone; it is a drop-down with one choice",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-022",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-023",
+   "part": "C",
+   "title": "At 200 percent text size the unread-count badge covers the bell and the bottom tabs touch each other",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-023",
+   "changed": ""
+  },
+  {
+   "id": "B-NB-024",
+   "part": "C",
+   "title": "When the driver cancels a request that was never accepted, the rider is told 'Any money on hold has been released' although nothing was held",
+   "result": "FAIL",
+   "votes": "0P/8F/0S",
+   "known": "NB-024",
+   "changed": ""
+  }
+ ],
+ "health": [
+  {
+   "checked_at": "2026-11-05T02:22:52.763Z",
+   "api": "Up",
+   "web": "Up",
+   "database": "Up",
+   "inbox": "Up",
+   "watchdog": "Running",
+   "app_commit": "ad20be8 (fixes A-E, local)",
+   "main_head": "d905a13"
+  }
+ ]
+}</script>
+<script>
+// Standalone stand-in for the dashboard runtime: the same dash.* calls the live page uses, over the DATA block below.
+// To update this file, edit the JSON inside <script id="status-data">: runs, mustfix, cases, health (same columns as the live page's sources).
+(function(){
+  const DATA = JSON.parse(document.getElementById('status-data').textContent);
+  const calcs = {}, draws = {};
+  window.dash = {
+    data(id){ if (DATA[id]) return {status:'ok', data:DATA[id]}; if (calcs[id]) return {status:'ok', data:calcs[id].fn(...calcs[id].inputs.map(i => (DATA[i] || window.dash.data(i).data)))}; return {status:'missing', data:[]}; },
+    calc(id, c){ calcs[id] = c; },
+    draw(name, fn){ if (fn) draws[name] = fn; const f = draws[name]; if (!f) return; document.querySelectorAll('[data-draw="'+name+'"]').forEach(el => f(el)); },
+    onData(fn){ fn(); }, params(){ return {}; }, setParams(){}, resetParams(){}, setLink(){}, refresh(){}, colors: [],
+  };
+  window.addEventListener('DOMContentLoaded', () => Object.keys(draws).forEach(n => window.dash.draw(n)));
+})();
+</script>
+<div id="dash-root">
+<style>
+  .ch { display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); }
+  .ch-head { display: grid; gap: var(--cds-gap-sm); }
+  .ch-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+  .ch-lede { margin: 0; color: var(--color-fg); font-size: var(--cds-font-size-body); max-width: 70ch; }
+  .ch-lede-muted { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ch-tiles { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); }
+  .ch-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-xs); min-width: 0; }
+  .ch-tile-label { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ch-tile-num { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .ch-tile-note { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ch-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-md); min-width: 0; }
+  .ch-card h2 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+  .ch-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ch-grid2 { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
+  .ch-health { display: grid; gap: var(--cds-gap-sm); grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); margin: 0; }
+  .ch-health div { display: grid; gap: 2px; }
+  .ch-health dt { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ch-health dd { margin: 0; font-weight: var(--cds-font-weight-medium); }
+  .ch-ok { color: var(--color-ok); }
+  .ch-warn { color: var(--color-warn); }
+  .ch-bad { color: var(--color-bad); }
+  .ch-scroll { overflow: auto; max-height: 34rem; }
+  .ch-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .ch-table th { text-align: left; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); position: sticky; top: 0; background: var(--color-panel); white-space: nowrap; }
+  .ch-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
+  .ch-table td.ch-num, .ch-table th.ch-num { text-align: right; }
+  .ch-pill { display: inline-block; padding: 0 var(--cds-pad-xs); border-radius: var(--cds-radius); border: 1px solid currentColor; font-weight: var(--cds-font-weight-medium); white-space: nowrap; }
+  .ch-filters { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: end; }
+  .ch-filters label { display: grid; gap: 2px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .ch-filters input, .ch-filters select { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); min-height: 44px; }
+  .ch-filters input { min-width: min(100%, 14rem); }
+  [data-dash-source-state=empty] { color: transparent; }
+  [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+  @media (max-width: 40rem) { .ch-hide-narrow { display: none; } }
+</style>
+
+<div class="ch">
+  <header class="ch-head">
+    <h1 class="ch-title" id="top">Campus Hop test status</h1>
+    <p class="ch-lede">Demo verdict: <b data-draw="verdict" data-source="latest" data-field="demo_ready" data-row="0">—</b>. Latest finished run: <span data-draw="lrun" data-source="latest" data-field="run" data-row="0">—</span>, on app commit <code data-draw="lcommit" data-source="latest" data-field="commit" data-row="0">—</code>.</p>
+    <p class="ch-lede-muted">Next run: <span data-draw="nrun" data-source="next" data-field="run" data-row="0">—</span>. Each run re-tests the draft on IcySnowy16/2006 main and updates this page. Times are Singapore time.</p>
+  </header>
+
+  <section class="ch-tiles" id="headline" aria-label="Latest results">
+    <div class="ch-tile"><span class="ch-tile-label">Cases passing</span><span class="ch-tile-num ch-ok" data-draw="t-pass" data-source="latest" data-field="pass" data-row="0">—</span><span class="ch-tile-note">of 121, latest finished run</span></div>
+    <div class="ch-tile"><span class="ch-tile-label">Cases failing</span><span class="ch-tile-num ch-bad" data-draw="t-fail" data-source="latest" data-field="fail" data-row="0">—</span><span class="ch-tile-note">part C: bug still seen</span></div>
+    <div class="ch-tile"><span class="ch-tile-label">Skipped</span><span class="ch-tile-num" data-draw="t-skip" data-source="latest" data-field="skip" data-row="0">—</span><span class="ch-tile-note">phone-only or not in this draft</span></div>
+    <div class="ch-tile"><span class="ch-tile-label">Must-fix still open</span><span class="ch-tile-num ch-warn" data-draw="t-open" data-source="mf_open" data-field="open" data-row="0">—</span><span class="ch-tile-note">demo blockers the judges named</span></div>
+    <div class="ch-tile"><span class="ch-tile-label">App in the test container</span><span class="ch-tile-num" data-draw="t-app" data-source="health" data-field="api" data-row="0">—</span><span class="ch-tile-note">checked <span data-draw="t-checked" data-source="health" data-field="checked_at" data-row="0">—</span></span></div>
+  </section>
+
+  <div class="ch-grid2">
+    <section class="ch-card" id="health">
+      <h2>App health</h2>
+      <p class="ch-note">The copy of the app the test runs use, kept up by a watchdog that restarts it within a minute.</p>
+      <dl class="ch-health">
+        <div><dt>API</dt><dd data-draw="h-api" data-source="health" data-field="api" data-row="0">—</dd></div>
+        <div><dt>Web app</dt><dd data-draw="h-web" data-source="health" data-field="web" data-row="0">—</dd></div>
+        <div><dt>Database</dt><dd data-draw="h-db" data-source="health" data-field="database" data-row="0">—</dd></div>
+        <div><dt>Fake inbox</dt><dd data-draw="h-inbox" data-source="health" data-field="inbox" data-row="0">—</dd></div>
+        <div><dt>Watchdog</dt><dd data-draw="h-wd" data-source="health" data-field="watchdog" data-row="0">—</dd></div>
+        <div><dt>App commit</dt><dd><code data-draw="h-commit" data-source="health" data-field="app_commit" data-row="0">—</code></dd></div>
+        <div><dt>Head of main</dt><dd><code data-draw="h-main" data-source="health" data-field="main_head" data-row="0">—</code></dd></div>
+      </dl>
+    </section>
+
+    <section class="ch-card" id="runs">
+      <h2>Runs</h2>
+      <p class="ch-note">The 12-agent panel, then the three overnight re-runs. "Fixed" and "Newly failing" compare with the run before.</p>
+      <div class="ch-scroll">
+        <table class="ch-table" data-source="runs" data-row-key="run">
+          <thead><tr><th data-field="run">Run</th><th data-field="state">State</th><th data-field="pass" class="ch-num">Pass</th><th data-field="fail" class="ch-num">Fail</th><th data-field="fixed" class="ch-num ch-hide-narrow">Fixed</th><th data-field="newly_failing" class="ch-num ch-hide-narrow">Newly failing</th><th data-field="note" class="ch-hide-narrow">Note</th></tr></thead>
+          <tbody data-draw="runs-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="ch-card" id="mustfix">
+    <h2>Must fix before the demo</h2>
+    <p class="ch-note">Ranked by how many of the 8 judges put it in their top 8. Each re-run updates the status.</p>
+    <div class="ch-scroll">
+      <table class="ch-table" data-source="mustfix" data-row-key="rank">
+        <thead><tr><th data-field="rank" class="ch-num">#</th><th data-field="item">Problem</th><th data-field="judges" class="ch-num">Judges</th><th data-field="status">Status</th><th data-field="last_checked" class="ch-hide-narrow">Last checked</th></tr></thead>
+        <tbody data-draw="mustfix-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ch-card" id="cases">
+    <h2>All 121 cases</h2>
+    <p class="ch-note">Majority vote of the 8 judges, then updated by each re-run. In part C, Fail means the bug is still seen.</p>
+    <div class="ch-filters">
+      <label for="ch-q">Search<input id="ch-q" type="search" placeholder="Case id or words"></label>
+      <label for="ch-result">Result<select id="ch-result"><option value="">All</option><option value="FAIL">Fail</option><option value="PASS">Pass</option><option value="SKIP">Skip</option><option value="TIE">Tie</option></select></label>
+      <label for="ch-part">Part<select id="ch-part"><option value="">All</option><option value="A">A walk-through</option><option value="B">B feature checks</option><option value="C">C bug checks</option></select></label>
+      <span class="ch-note" data-draw="cases-count">—</span>
+    </div>
+    <div class="ch-scroll">
+      <table class="ch-table" data-source="cases" data-row-key="id">
+        <thead><tr><th data-field="id">Case</th><th data-field="part" class="ch-hide-narrow">Part</th><th data-field="title">What it checks</th><th data-field="result">Result</th><th data-field="votes" class="ch-hide-narrow">Votes</th><th data-field="changed" class="ch-hide-narrow">Changed</th></tr></thead>
+        <tbody data-draw="cases-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+  dash.calc('latest', {
+    inputs: ['runs'],
+    fn: (runs) => runs.filter((r) => r.state === 'Done').slice(-1),
+    title: 'Latest finished run',
+    description: 'The last run in the list whose state is Done.',
+  });
+  dash.calc('next', {
+    inputs: ['runs'],
+    fn: (runs) => runs.filter((r) => r.state === 'Scheduled' || r.state === 'Running').slice(0, 1),
+    title: 'Next run',
+    description: 'The first run that is scheduled or running.',
+  });
+  dash.calc('mf_open', {
+    inputs: ['mustfix'],
+    fn: (mustfix) => [{ open: mustfix.filter((m) => !String(m.status).startsWith('Fixed')).length, total: mustfix.length }],
+    title: 'Must-fix items still open',
+    description: 'Must-fix items whose status does not start with Fixed.',
+  });
+
+  const sgt = new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const when = (v) => { const d = new Date(String(v).split(' ')[0]); return isNaN(d) ? String(v) : sgt.format(d); };
+  const tone = (v) => { const s = String(v).toLowerCase(); return /^(up|running|done|fixed|pass)/.test(s) ? 'ch-ok' : /^(down|fail|still failing|newly)/.test(s) ? 'ch-bad' : /^(scheduled|skip|tie|partly)/.test(s) ? 'ch-warn' : ''; };
+
+  const one = (name, src, field, fmt, colour) => dash.draw(name, (el) => {
+    const d = dash.data(src);
+    const r = d.status === 'ok' ? d.data[0] : null;
+    const v = r ? r[field] : null;
+    el.textContent = v === null || v === undefined || v === '' ? '—' : fmt ? fmt(v) : String(v);
+    if (colour) { el.classList.remove('ch-ok', 'ch-warn', 'ch-bad'); const t = tone(v); if (t && v) el.classList.add(t); }
+  });
+  one('verdict', 'latest', 'demo_ready');
+  one('lrun', 'latest', 'run');
+  one('lcommit', 'latest', 'commit');
+  one('nrun', 'next', 'run');
+  one('t-pass', 'latest', 'pass');
+  one('t-fail', 'latest', 'fail');
+  one('t-skip', 'latest', 'skip');
+  one('t-open', 'mf_open', 'open');
+  one('t-app', 'health', 'api', null, true);
+  one('t-checked', 'health', 'checked_at', when);
+  one('h-api', 'health', 'api', null, true);
+  one('h-web', 'health', 'web', null, true);
+  one('h-db', 'health', 'database', null, true);
+  one('h-inbox', 'health', 'inbox', null, true);
+  one('h-wd', 'health', 'watchdog', null, true);
+  one('h-commit', 'health', 'app_commit');
+  one('h-main', 'health', 'main_head');
+
+  const cell = (tr, v, cls, pill) => {
+    const td = document.createElement('td');
+    if (cls) td.className = cls;
+    const text = v === null || v === undefined ? '' : String(v);
+    if (pill && text) { const s = document.createElement('span'); s.className = 'ch-pill ' + tone(text); s.textContent = text; td.appendChild(s); } else td.textContent = text;
+    tr.appendChild(td);
+  };
+
+  dash.draw('runs-body', (tb) => {
+    const d = dash.data('runs');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    for (const r of d.data) {
+      const tr = document.createElement('tr');
+      cell(tr, r.run); cell(tr, r.state === 'Done' ? r.state : r.state + ' ' + when(r.at), '', true);
+      cell(tr, r.pass, 'ch-num'); cell(tr, r.fail, 'ch-num'); cell(tr, r.fixed, 'ch-num ch-hide-narrow'); cell(tr, r.newly_failing, 'ch-num ch-hide-narrow'); cell(tr, r.note, 'ch-hide-narrow');
+      tb.appendChild(tr);
+    }
+  });
+
+  dash.draw('mustfix-body', (tb) => {
+    const d = dash.data('mustfix');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    for (const r of d.data) {
+      const tr = document.createElement('tr');
+      cell(tr, r.rank, 'ch-num'); cell(tr, r.item); cell(tr, r.judges + '/8', 'ch-num'); cell(tr, r.status, '', true); cell(tr, when(r.last_checked), 'ch-hide-narrow');
+      tb.appendChild(tr);
+    }
+  });
+
+  const filters = () => {
+    const get = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    return { q: get('ch-q').trim().toLowerCase(), result: get('ch-result'), part: get('ch-part') };
+  };
+  const shown = (rows) => { const f = filters(); return rows.filter((r) => (!f.result || r.result === f.result) && (!f.part || r.part === f.part) && (!f.q || (r.id + ' ' + r.title + ' ' + (r.known || '')).toLowerCase().includes(f.q))); };
+
+  dash.draw('cases-body', (tb) => {
+    const d = dash.data('cases');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    for (const r of shown(d.data)) {
+      const tr = document.createElement('tr');
+      cell(tr, r.id); cell(tr, r.part, 'ch-hide-narrow'); cell(tr, r.title); cell(tr, r.result, '', true); cell(tr, r.votes, 'ch-hide-narrow'); cell(tr, r.changed, 'ch-hide-narrow');
+      tb.appendChild(tr);
+    }
+  });
+  dash.draw('cases-count', (el) => {
+    const d = dash.data('cases');
+    el.textContent = d.status === 'ok' ? shown(d.data).length + ' shown' : '—';
+  });
+
+  for (const el of document.querySelectorAll('#ch-q, #ch-result, #ch-part')) {
+    el.addEventListener('input', () => { dash.draw('cases-body'); dash.draw('cases-count'); });
+    el.addEventListener('change', () => { dash.draw('cases-body'); dash.draw('cases-count'); });
+  }
+</script>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,96 @@
+[
+ {
+  "id": "N-f1-01",
+  "title": "One rider can hold two confirmed seats with two different drivers at the same time and is charged for both",
+  "area": "booking / money (race)",
+  "severity": "high",
+  "steps": [
+   "Two own drivers go live (POST /api/journeys) with SHARING presets at Main Gate.",
+   "Rider with $10.00 makes one hop request Hall A -> Main Gate; both journeys are in the matches.",
+   "Send POST /api/bookings for journey 1 and journey 2 at the same moment (Promise.all, same cookie).",
+   "Each driver accepts its booking.",
+   "Both drivers start, mark ARRIVED/PICKED_UP/DROPPED_OFF, complete."
+  ],
+  "expected": "The second booking is refused with 409 'You already have a booking in progress. Finish or cancel it first.' (the same check that refuses it when sent one after the other).",
+  "actual": "Both POST /api/bookings return 201 PENDING (ids ...7h7dz5mu14k0vg and ...7j7dz5h6tfx6uj). Both accepts 200 CONFIRMED; wallet {balanceCents:1000, heldCents:600}, history HOLD 300, HOLD 300. Both trips complete: rider wallet $4.00, History 'Ride paid $3.00' twice at 1:02:32 am; Trips lists two 'Completed | Fare $3.00 | Paid' rides at the same minute; each driver +$3.00. With only $5.00 the second accept is auto-declined only because the balance ran out (422 INSUFFICIENT_BALANCE), not because of the rule.",
+  "where": "server/src/services/BookingService.ts:77 locks only the JOURNEY row; the 'active booking' check at :101 is per passenger but nothing serialises the passenger, so two books to two journeys both pass. accept() (:150-184) never re-checks that the passenger has another CONFIRMED booking.",
+  "evidence": [
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1.js",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1b.log",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1c.js",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1c.log",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1-trips.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1-wallet.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e1.log"
+  ],
+  "demo_impact": "Not in scenes 1-6 as clicked (one Book button at a time); reachable by a double tap across two tabs or by the API, so a marker probing concurrency would find it."
+ },
+ {
+  "id": "N-f1-02",
+  "title": "Rider asks at $2.00, the other rider leaves before Accept, and the rider is confirmed and held at $3.00 with no fare-change notice",
+  "area": "fares / booking",
+  "severity": "medium",
+  "steps": [
+   "Own driver live (SHARING). Rider A ($5) books, driver accepts ($3.00 held).",
+   "Rider B ($5) books: POST /api/bookings returns currentFareCents 200 (the confirm screen said $2.00).",
+   "A cancels (POST /api/bookings/:A/cancel).",
+   "Driver accepts B.",
+   "B opens the booking page, Wallet and the bell."
+  ],
+  "expected": "B is asked again (or at least told) before $3.00 is held, e.g. a FARE_CHANGED bell 'Your fare changed from $2.00 to $3.00', or the accept is held back until B agrees.",
+  "actual": "Accept 200 CONFIRMED currentFareCents 300. Booking page: 'Confirmed | Fare | $3.00 | Current fare: it drops if another rider joins.' Wallet: 'Held for rides $3.00', History 'Held for a ride $3.00'. Bell has only 'Your driver accepted. Your seat is confirmed.' and 'Wallet check: enough balance for this trip.' - nothing about the $1.00 rise. (A rider with exactly $2.00-$2.99 is instead auto-declined with the generic 'could not be confirmed' line.)",
+  "where": "BookingService.ts:165 recomputes the fare at accept and :181 writes it straight into currentFareCents, so FareService.retier (FareService.ts:59) sees no change and never queues FareChanged for this rider.",
+  "evidence": [
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e2.js",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e2.log",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e2-booking.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e2-bell.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e2-wallet.png"
+  ],
+  "demo_impact": "Scene 5 (Priya + Sam sharing) if the presenter cancels Priya before Dana taps Accept on Sam: Sam ($2.50) is auto-declined, or a funded rider silently pays $3.00."
+ },
+ {
+  "id": "N-f1-03",
+  "title": "A co-rider's no-show raises the rider who is already in the car from $2.00 to $3.00; with $2.00 they end LOCKED with a $1.00 debt",
+  "area": "fares / no-show / locking",
+  "severity": "high",
+  "steps": [
+   "Own driver live (SHARING). Rider A ($5) and rider B (top-up exactly $2.00) both accepted: both $2.00, B holds $2.00.",
+   "Driver starts the trip, ARRIVED for both, PICKED_UP B.",
+   "Wait 3 min 5 s, mark A NO_SHOW.",
+   "Drop B off, complete."
+  ],
+  "expected": "B, already in the car on an agreed $2.00 shared fare, is not charged more because another rider never turned up (or is warned and can top up before the drop-off); B's account stays active.",
+  "actual": "After the no-show B's bell: 'Your fare changed from $2.00 to $3.00.'; booking page 'Fare $3.00'; hold stays $2.00 (nothing free to add). After complete: B 'Balance $0.00', 'You owe $1.00', red bar 'Your account is locked because of an unpaid balance.', bell 'You owe $1.00 from your last trip. Top up to unlock your account.'; booking 'Part of this fare is unpaid.' Driver gets 'Fare received $2.00' only. A got both holds back (RELEASE 100, RELEASE 200). A 3-rider trip with one no-show stays at $2.00 each (checked, fine).",
+  "where": "TripService.ts:151 calls FareService.retier after NO_SHOW (by design FR 5.1.3), WalletService.ts:123 holds the rise only partially, then deduct leaves the shortfall and AccountLockService.recordShortfall locks. Same mechanism as C-027 (cancel), but this trigger happens with the rider already picked up and unable to cancel; C-033's judges only noted the jump as out of scope.",
+  "evidence": [
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e5.js",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e5.log",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e5-bell.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e5-booking.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e5-wallet.png"
+  ],
+  "demo_impact": "Scene 5 if the presenter demonstrates a no-show instead of a cancel; Sam ($2.50) would end locked owing $0.50."
+ },
+ {
+  "id": "N-f1-04",
+  "title": "Withdraw box reads hex/exponent text as dollars: '0x2' pays out $2.00, 'Infinity' enables the button and fails with a generic error",
+  "area": "wallet / withdraw / rounding",
+  "severity": "low",
+  "steps": [
+   "Driver with $4.00 earnings opens Wallet.",
+   "Type 0x2 in 'Amount to withdraw in dollars', press Withdraw.",
+   "Type Infinity, press Withdraw."
+  ],
+  "expected": "Only a plain dollar amount (e.g. 2 or 2.50) enables Withdraw; anything else is refused next to the box.",
+  "actual": "'0x2': button enabled, Balance $4.00 -> $2.00, History 'Withdrawn $2.00'. '0x64' is read as $100 ('You cannot withdraw more than you have available.'). 'Infinity': button enabled, banner 'Some of the information provided is invalid.'",
+  "where": "client/src/pages/AccountPages.tsx:106 Math.round(Number(amount) * 100); Number() accepts hex, exponent and Infinity, and the only guard is cents >= 100. Money.fromDollars in server/src/core/money.ts already has the strict parser.",
+  "evidence": [
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e7.js",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e7-0x2.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e7-0x64.png",
+   "/tmp/claude-0/-home-user-2006/4da488d3-701a-505d-8bca-74c0047c18de/scratchpad/panel2/find-f1/e7-Infinity.png"
+  ],
+  "demo_impact": "No (withdraw is not in scenes 1-6)."
+ }
+]
