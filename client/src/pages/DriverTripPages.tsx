@@ -85,7 +85,14 @@ export function GoLivePage() {
   const [presetId, setPresetId] = useState('');
   const [geo, setGeo] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
-  const goLive = useApiMutation('journeys.goLive', { onSuccess: (j) => navigate(`/driver/journey/${j.id}`, { replace: true }) });
+  const refresh = useRefresh();
+  // Refresh the journey list first: the journey page reads it, and a stale copy says "This journey was not found." until its next poll.
+  const goLive = useApiMutation('journeys.goLive', {
+    onSuccess: async (j) => {
+      await refresh('journeys.mine');
+      void navigate(`/driver/journey/${j.id}`, { replace: true });
+    },
+  });
   const chosen = presetId || presets.data?.[0]?.id || '';
 
   const go = async () => {
@@ -143,7 +150,7 @@ export function DriverJourneyPage() {
 
   // Before the trip starts the phone reports its position about every 5 s so the server can cancel the journey if the driver leaves campus.
   const position = useApiMutation('journeys.position');
-  const { problem } = useLocationReporter(live, 5000, (p) => position.mutate({ params: { id }, body: p }));
+  const { problem, lastFix } = useLocationReporter(live, 5000, (p) => position.mutate({ params: { id }, body: p }));
 
   const accept = useApiMutation('bookings.accept', { onSettled: () => refresh('journeys.requests', 'bookings.forJourney', 'journeys.mine') });
   const decline = useApiMutation('bookings.decline', { onSettled: () => refresh('journeys.requests', 'bookings.forJourney') });
@@ -209,7 +216,7 @@ export function DriverJourneyPage() {
         </>
       ) : (
         <>
-          <TrackingMap polyline={journey.route?.polyline ?? null} position={null} />
+          <TrackingMap polyline={journey.route?.polyline ?? null} position={lastFix} receivedAt={lastFix ? Date.now() : null} />
           {problem && <Banner kind="warn">{problem}</Banner>}
           <h2>Requests</h2>
           <ErrorBanner error={accept.error ?? decline.error} />

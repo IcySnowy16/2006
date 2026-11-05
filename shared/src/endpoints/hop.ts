@@ -98,6 +98,9 @@ export const Booking = z.object({
   dropoffPointId: Id,
   /** First name of the other person on the trip (the driver for a passenger, the passenger for a driver). Only filled by the read routes. */
   counterpartFirstName: z.string().nullable(),
+  /** Only filled by bookings.get: the journey's route (encoded polyline) and the pickup point, so the rider's map can draw the trip. */
+  routePolyline: z.string().nullable().optional(),
+  pickupPosition: LatLng.nullable().optional(),
 });
 export const BookingList = z.array(Booking);
 

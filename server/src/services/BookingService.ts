@@ -251,10 +251,14 @@ export class BookingService {
 
   /** One booking: only its passenger or its journey's driver. */
   async get(userId: string, bookingId: string): Promise<BookingDto> {
-    const row = await this.ctx.db().booking.findUnique({ where: { id: bookingId }, include: { journey: { include: { driver: true } }, passenger: true } });
+    const row = await this.ctx
+      .db()
+      .booking.findUnique({ where: { id: bookingId }, include: { journey: { include: { driver: true, route: true } }, passenger: true, pickupPoint: true } });
     if (!row) throw new AppError('NOT_FOUND');
     if (row.passengerId !== userId && row.journey.driverId !== userId) throw new AppError('FORBIDDEN');
     const dto = toBooking(row, firstName((row.passengerId === userId ? row.journey.driver : row.passenger).name));
+    dto.routePolyline = row.journey.route?.polyline ?? null;
+    dto.pickupPosition = { lat: row.pickupPoint.latitude, lng: row.pickupPoint.longitude };
     // A PENDING booking's stored fare was right when it was made; riders may have joined or left since. Show what accepting it costs now.
     if (row.status === 'PENDING' && Journey.fromRecord(row.journey as unknown as JourneyRecord).isOpenForBooking()) {
       dto.currentFareCents = await this.fares.fareIfJoining(row.journeyId);

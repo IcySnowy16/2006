@@ -31,6 +31,7 @@ import {
 import { useCatalog } from '../hooks/useCatalog';
 import { useWakeLock } from '../hooks/useDevice';
 import { useJourneyChannel } from '../hooks/useSocket';
+import { distanceM } from '../lib/geo';
 import { latestPickup } from '../lib/pickup';
 import { CallButton } from './DriverTripPages';
 
@@ -371,6 +372,8 @@ export function BookingPage() {
   if (!b) return <ErrorBanner error={booking.error} />;
   const live = channel.pickups[b.id];
   const status = latestPickup(b.pickupStatus, live?.status);
+  // Worked out from every live position (the server only sends a distance when the pickup status changes).
+  const awayM = channel.position && b.pickupPosition ? Math.round(distanceM(channel.position, b.pickupPosition)) : (live?.distanceM ?? null);
   const done = b.status === 'COMPLETED';
 
   return (
@@ -399,10 +402,10 @@ export function BookingPage() {
       </Card>
       {confirmed && (
         <>
-          <TrackingMap polyline={null} position={channel.position} receivedAt={channel.positionAt} />
-          {typeof live?.distanceM === 'number' && status !== 'ARRIVED' && (
+          <TrackingMap polyline={b.routePolyline ?? null} position={channel.position} receivedAt={channel.positionAt} />
+          {typeof awayM === 'number' && (status === 'WAITING' || status === 'APPROACHING') && (
             <Banner kind="info">
-              Driver is {live.distanceM} m away{typeof live.etaSec === 'number' && `, about ${Math.max(1, Math.round(live.etaSec / 60))} min`}.
+              Driver is {awayM} m away, about {Math.max(1, Math.round(awayM / ((DEFAULTS.AVG_SPEED_KMH * 1000) / 60)))} min.
             </Banner>
           )}
           {status === 'ARRIVED' && <Banner kind="good">Your driver has arrived.</Banner>}
