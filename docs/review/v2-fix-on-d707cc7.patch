@@ -1,0 +1,48 @@
+diff --git a/server/src/services/BookingService.ts b/server/src/services/BookingService.ts
+index ebef2e1..943b3e5 100644
+--- a/server/src/services/BookingService.ts
++++ b/server/src/services/BookingService.ts
+@@ -84,9 +84,6 @@ export class BookingService {
+       const user = await tx.user.findUniqueOrThrow({ where: { id: passengerId } });
+       if (user.accountStatus === 'LOCKED') throw new AppError('ACCOUNT_LOCKED');
+       if (journey.driverId === passengerId) throw new AppError('FORBIDDEN', { message: 'You cannot book your own journey.' });
+-      const driving = await tx.journey.findFirst({ where: { driverId: passengerId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
+-      if (driving)
+-        throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You have a journey live as a driver. Finish or cancel it before you book a ride.' });
+       if (!Journey.fromRecord(journey as unknown as JourneyRecord).isOpenForBooking()) throw new AppError('SEAT_UNAVAILABLE');
+ 
+       const [pickup, dropoff] = await Promise.all([
+@@ -106,6 +103,10 @@ export class BookingService {
+       // so lock the rider too. Their wallet row is the rider lock: every path takes it after the journey (accept, settlement), never
+       // before, so the order cannot deadlock. The second of two simultaneous books waits here and then sees the first one's booking.
+       await lockWallet(tx, passengerId);
++      // Under the rider lock, which go-live also takes, so going live and booking at once cannot both pass.
++      const driving = await tx.journey.findFirst({ where: { driverId: passengerId, status: { in: ['LIVE', 'OPEN', 'FULL', 'IN_PROGRESS'] } } });
++      if (driving)
++        throw new AppError('ILLEGAL_STATE_TRANSITION', { message: 'You have a journey live as a driver. Finish or cancel it before you book a ride.' });
+       const active = await tx.booking.findFirst({
+         where: { passengerId, status: { in: ['PENDING', 'CONFIRMED'] }, journey: { status: { in: [...ACTIVE_JOURNEY_STATUSES] } } },
+       });
+diff --git a/server/src/services/JourneyService.ts b/server/src/services/JourneyService.ts
+index d1db2bb..e0a763a 100644
+--- a/server/src/services/JourneyService.ts
++++ b/server/src/services/JourneyService.ts
+@@ -13,7 +13,7 @@ import type { CancelReason, Hop } from '@campus-hop/shared';
+ import type { z } from 'zod';
+ import type { AppContext } from '../context';
+ import { addMs, minutes } from '../core/clock';
+-import { type Db, lockDriver, lockJourney, withTransaction } from '../core/transaction';
++import { type Db, lockDriver, lockJourney, lockWallet, withTransaction } from '../core/transaction';
+ import { Booking, type BookingRecord } from '../entities/Booking';
+ import { Driver, type DriverRecord } from '../entities/Driver';
+ import { capacityFor, Journey, type JourneyRecord } from '../entities/Journey';
+@@ -68,6 +68,9 @@ export class JourneyService {
+     const journeyId = await withTransaction(async (tx) => {
+       // Simultaneous go-lives for one driver queue here; each re-reads the state the previous one committed, so at most one
+       // journey is ever live or in progress per driver (B-NA-001).
++      // Wallet first, then the driver profile: the order trip settlement uses, so the two cannot deadlock. The wallet row is also the
++      // rider lock booking takes, so going live and booking a ride at the same moment cannot both pass (vetting V-2).
++      await lockWallet(tx, driverId);
+       await lockDriver(tx, driverId);
+       await this.assertCanGoLive(tx, driverId, now);
+       const created = await tx.journey.create({
