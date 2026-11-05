@@ -112,3 +112,19 @@ The 10 commits are listed in `git log 1ec4320..pending-fixes`. Copying them into
 - Demo accounts (password `demo-password-1`): demo.driver (Dana), demo.rider1 (Priya, $20), demo.rider2 (Wei, $1), demo.rider3 (Sam, $2.50), demo.locked (Lee, owes $0.70), all `@e.ntu.edu.sg`.
 - Leave `GOOGLE_MAPS_API_KEY` empty for this draft: it calls the Directions API, and the provided key is restricted to the Routes API (Staging code), so going live fails with REQUEST_DENIED. Keys belong in `.env` only, never in the repo or a chat.
 - In the cloud container, the container restarts every hour or two and kills all processes. A watchdog script (kept outside the repo) restarted Docker and the app within about 30 s each time.
+
+## Live page: data and how to update it
+
+The page https://claude.ai/artifact/9BZLjAAtsMRzG6JVEuq4yt is a Dashboard artifact. Its page is the store document `files/index.html`. Its data are four attached JSON files, each pointed to by a store document `datasets/<id>`, with `source: {kind: "file", url: "/_blob/<id>", name, format: "json"}`. The columns:
+- `runs`: run, at (ISO +08:00), state (Scheduled | Running | Done | Failed), commit, pass, fail, skip, tie, fixed, newly_failing, demo_ready, note. Chronological.
+- `mustfix`: rank, item, judges, status, last_checked. The "still open" tile counts the statuses that do not start with "Fixed".
+- `cases`: id, part (A | B | C), title, result (PASS | FAIL | SKIP | TIE), votes, known, changed.
+- `health`: one row: checked_at, api, web, database, inbox (Up | Down), watchdog (Running | Stopped), app_commit, main_head.
+
+To update it from a Claude session on the owner's claude.ai account:
+1. Edit the JSON.
+2. Upload it with the Artifact tool (`url` = the page, `asset: true`, `file_path`).
+3. ArtifactData `get` `datasets/<id>` for its version, then `update` it with `if_version`: `source.url` = the new `/_blob/<id>`, `updated: {at, by}`, `edit: {via: "claude", at}`.
+4. Delete the replaced blob.
+
+The standalone copy `Campus_Hop_Test_Status.html` keeps the same four sets as one JSON block at the top of the file.
